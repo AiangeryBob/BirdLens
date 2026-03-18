@@ -1,0 +1,2462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>BirdLens — AI Bird Identification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<!-- TF.js loaded dynamically in identify() -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --forest:#0f1f0f;--moss:#1e3a1e;--sage:#3d6b4f;--leaf:#5a9e6f;
+  --mint:#8ecfa0;--cream:#f4efe4;--bark:#7a5c38;
+  --sky:#a8ccd8;--dusk:#6699aa;--gold:#c8972a;--amber:#a07020;
+  --text:#111;--muted:#6a6a58;--card:#ffffffee;
+  --blur:blur(18px);--shadow:0 8px 40px rgba(15,31,15,.22);
+  --r:18px;--t:.32s cubic-bezier(.4,0,.2,1);--nav-h:68px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--forest);color:var(--text);height:100vh;overflow:hidden}
+
+/* ── Background ── */
+.bg{position:fixed;inset:0;z-index:0;
+  background:radial-gradient(ellipse 70% 60% at 15% 0%,#243d28 0%,transparent 55%),
+             radial-gradient(ellipse 50% 70% at 85% 100%,#152535 0%,transparent 55%),
+             linear-gradient(160deg,#0f1f0f 0%,#0a1a0a 100%)}
+.leaf-float{position:fixed;pointer-events:none;z-index:1;opacity:0;animation:leaffall linear infinite}
+@keyframes leaffall{0%{transform:translateY(-30px) rotate(0deg);opacity:0}8%{opacity:.5}90%{opacity:.2}100%{transform:translateY(105vh) rotate(400deg);opacity:0}}
+
+/* ════════════════════════════════════════
+   AUTH SCREEN
+════════════════════════════════════════ */
+#auth-screen{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(ellipse 70% 60% at 15% 0%,#243d28 0%,transparent 55%),radial-gradient(ellipse 50% 70% at 85% 100%,#152535 0%,transparent 55%),linear-gradient(160deg,#0f1f0f,#0a1a0a)}
+#auth-screen.hidden{display:none}
+.auth-box{background:rgba(255,255,255,.05);backdrop-filter:var(--blur);border:1px solid rgba(142,207,160,.18);border-radius:28px;padding:40px 36px;width:100%;max-width:420px;text-align:center;animation:popIn .4s cubic-bezier(.4,0,.2,1)}
+@keyframes popIn{from{opacity:0;transform:scale(.94) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.auth-logo{font-size:52px;margin-bottom:10px}
+.auth-brand{font-family:'Playfair Display',serif;font-size:30px;color:var(--cream);font-weight:700;margin-bottom:4px}
+.auth-brand span{color:var(--leaf)}
+.auth-tagline{font-size:13px;color:var(--mint);margin-bottom:32px;line-height:1.5}
+.auth-tabs{display:flex;gap:0;background:rgba(255,255,255,.06);border-radius:12px;padding:4px;margin-bottom:24px}
+.auth-tab{flex:1;padding:10px;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:var(--t);background:transparent;color:var(--mint)}
+.auth-tab.active{background:linear-gradient(135deg,var(--sage),var(--leaf));color:#fff;box-shadow:0 3px 12px rgba(90,158,111,.4)}
+.auth-form{display:none;animation:fadeSlide .3s ease}
+.auth-form.active{display:block}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.auth-field{margin-bottom:14px;text-align:left}
+.auth-label{font-size:11px;color:var(--mint);font-family:'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;display:block;margin-bottom:5px}
+.auth-input{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(142,207,160,.2);border-radius:10px;padding:12px 14px;color:var(--cream);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:var(--t)}
+.auth-input:focus{border-color:var(--leaf);background:rgba(255,255,255,.1)}
+.auth-input::placeholder{color:rgba(255,255,255,.25)}
+.auth-btn{width:100%;padding:14px;background:linear-gradient(135deg,var(--sage),var(--leaf));border:none;border-radius:12px;font-family:'Playfair Display',serif;font-size:17px;color:#fff;cursor:pointer;transition:var(--t);box-shadow:0 5px 20px rgba(90,158,111,.4);margin-top:6px}
+.auth-btn:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(90,158,111,.5)}
+.auth-err{background:rgba(180,50,50,.15);border:1px solid rgba(180,50,50,.3);border-radius:9px;padding:10px 13px;color:#e07070;font-size:12px;margin-bottom:12px;display:none;text-align:left}
+.auth-err.on{display:block}
+.auth-note{font-size:11px;color:var(--muted);margin-top:18px;line-height:1.5}
+
+/* ════════════════════════════════════════
+   MAIN APP
+════════════════════════════════════════ */
+#app{position:relative;z-index:2;display:flex;flex-direction:column;height:100vh}
+#app.hidden{display:none}
+
+/* Desktop layout */
+@media(min-width:960px){
+  #app{flex-direction:row;flex-wrap:wrap}
+  .topbar{width:100%;flex-shrink:0;order:-1}
+  .sidebar{width:300px;height:calc(100vh - 56px);overflow-y:auto;flex-shrink:0;border-right:1px solid rgba(142,207,160,.12);order:1}
+  .page-host{flex:1;height:calc(100vh - 56px);overflow-y:auto;order:2}
+  .bottomnav{display:none}
+}
+
+/* ── Topbar ── */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;background:rgba(10,26,10,.93);backdrop-filter:var(--blur);border-bottom:1px solid rgba(142,207,160,.1);flex-shrink:0;position:sticky;top:0;z-index:50;gap:8px}
+.logo{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--sage),var(--leaf));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 10px rgba(90,158,111,.4)}
+.logo-text{font-family:'Playfair Display',serif;font-size:19px;color:var(--cream);font-weight:700}
+.logo-text span{color:var(--leaf)}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.loc-pill{display:flex;align-items:center;gap:5px;background:rgba(142,207,160,.08);border:1px solid rgba(142,207,160,.18);border-radius:18px;padding:5px 10px;font-size:11px;color:var(--mint);font-family:'DM Mono',monospace;cursor:pointer;transition:var(--t);max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.loc-pill:hover{background:rgba(142,207,160,.16)}
+.loc-dot{width:5px;height:5px;background:var(--leaf);border-radius:50%;animation:pulse 2s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
+.user-pill{display:flex;align-items:center;gap:6px;background:rgba(200,151,42,.09);border:1px solid rgba(200,151,42,.22);border-radius:18px;padding:5px 10px;font-size:11px;color:var(--gold);cursor:pointer;transition:var(--t);font-family:'DM Mono',monospace}
+.user-pill:hover{background:rgba(200,151,42,.17)}
+
+/* ── Pages ── */
+.page-host{flex:1;overflow-y:auto;padding-bottom:calc(var(--nav-h)+8px)}
+@media(min-width:960px){.page-host{padding-bottom:20px}}
+.page-section{display:none}
+.page-section.active,.map-page.active{display:block}
+.page-inner{padding:18px 18px 10px}
+@media(min-width:960px){.page-inner{padding:26px 30px 20px}}
+
+/* ── Bottom Nav ── */
+.bottomnav{position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;justify-content:space-around;align-items:center;background:rgba(10,26,10,.96);backdrop-filter:var(--blur);border-top:1px solid rgba(142,207,160,.12);height:var(--nav-h);padding-bottom:env(safe-area-inset-bottom)}
+.nav-btn{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:var(--muted);cursor:pointer;transition:var(--t);padding:6px 18px;border-radius:12px;border:none;background:none}
+.nav-btn.active{color:var(--leaf)}
+.nav-btn:hover{color:var(--mint)}
+.nav-icon{font-size:22px;line-height:1}
+
+/* ── Sidebar ── */
+.sidebar{padding:18px 16px;background:rgba(10,26,10,.5);overflow-y:auto}
+.sidebar-title{font-family:'Playfair Display',serif;font-size:16px;color:var(--cream);margin-bottom:12px;font-weight:700}
+.sbar-section{margin-bottom:22px}
+.sighting-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid rgba(142,207,160,.09);margin-bottom:7px;cursor:pointer;transition:var(--t)}
+.sighting-item:hover{background:rgba(255,255,255,.08);border-color:rgba(142,207,160,.22)}
+.si-emoji{font-size:24px}
+.si-info{flex:1;min-width:0}
+.si-name{font-size:12px;color:var(--cream);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si-meta{font-size:10px;color:var(--muted)}
+.si-conf{font-size:10px;color:var(--leaf);font-family:'DM Mono',monospace}
+
+/* ── Section label ── */
+.slabel{font-size:10px;font-family:'DM Mono',monospace;color:var(--mint);letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.slabel::after{content:'';flex:1;height:1px;background:rgba(142,207,160,.18)}
+
+/* ── Upload zone ── */
+.upload-zone{border:2px dashed rgba(142,207,160,.28);border-radius:var(--r);padding:32px 20px;text-align:center;cursor:pointer;transition:var(--t);background:rgba(255,255,255,.02);position:relative;overflow:hidden;margin-bottom:16px}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--leaf);background:rgba(90,158,111,.07);transform:translateY(-2px)}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.uz-icon{font-size:44px;display:block;margin-bottom:10px}
+.uz-title{font-family:'Playfair Display',serif;font-size:18px;color:var(--cream);margin-bottom:5px}
+.uz-sub{font-size:12px;color:var(--mint);line-height:1.5}
+.uz-btns{display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap;position:relative;z-index:1}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:40px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:var(--t);white-space:nowrap}
+.btn-primary{background:linear-gradient(135deg,var(--sage),var(--leaf));color:#fff;box-shadow:0 4px 18px rgba(90,158,111,.4)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(90,158,111,.5)}
+.btn-secondary{background:rgba(255,255,255,.07);color:var(--mint);border:1px solid rgba(142,207,160,.2)}
+.btn-secondary:hover{background:rgba(255,255,255,.13)}
+.btn-gold{background:linear-gradient(135deg,var(--amber),var(--gold));color:#fff;box-shadow:0 4px 18px rgba(160,112,32,.4)}
+.btn-gold:hover{transform:translateY(-2px)}
+.btn-danger{background:rgba(180,50,50,.15);color:#e07070;border:1px solid rgba(180,50,50,.3)}
+.btn-danger:hover{background:rgba(180,50,50,.28)}
+.btn-danger-solid{background:rgba(180,50,50,.85);color:#fff;border:1px solid rgba(180,50,50,.6)}
+.btn-danger-solid:hover{background:rgba(200,50,50,.95)}
+.btn-sm{padding:6px 13px;font-size:12px}
+
+/* ── Preview ── */
+.preview-wrap{position:relative;border-radius:var(--r);overflow:hidden;margin-bottom:16px;display:none;box-shadow:var(--shadow)}
+.preview-wrap.on{display:block}
+.preview-img{width:100%;max-height:280px;object-fit:cover;display:block}
+.preview-ovl{position:absolute;inset:0;background:linear-gradient(to top,rgba(10,26,10,.7) 0%,transparent 50%);pointer-events:none}
+.preview-badge{position:absolute;top:10px;right:10px;background:rgba(10,26,10,.7);backdrop-filter:var(--blur);border:1px solid rgba(142,207,160,.2);border-radius:16px;padding:5px 11px;font-size:10px;color:var(--mint);font-family:'DM Mono',monospace}
+.preview-rm{position:absolute;top:10px;left:10px;width:28px;height:28px;background:rgba(180,50,50,.7);border:none;border-radius:50%;color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--t);z-index:2}
+.preview-rm:hover{background:rgba(200,50,50,.9);transform:scale(1.1)}
+
+/* ── Context cards ── */
+.ctx-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.ctx-card{background:rgba(255,255,255,.04);border:1px solid rgba(142,207,160,.13);border-radius:13px;padding:12px 14px}
+.ctx-lbl{font-size:10px;color:var(--mint);font-family:'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;margin-bottom:5px}
+.ctx-val{font-size:13px;color:var(--cream);font-weight:500}
+.ctx-val.dim{color:var(--muted);font-style:italic;font-size:11px}
+
+/* ── Identify button ── */
+.id-btn{width:100%;padding:16px;background:linear-gradient(135deg,var(--sage) 0%,var(--leaf) 60%,#7dc48d 100%);border:none;border-radius:var(--r);font-family:'Playfair Display',serif;font-size:18px;color:#fff;cursor:pointer;transition:var(--t);box-shadow:0 6px 28px rgba(90,158,111,.45);margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:10px;position:relative;overflow:hidden}
+.id-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent,rgba(255,255,255,.15),transparent);transform:translateX(-100%);transition:transform .6s ease}
+.id-btn:hover::before{transform:translateX(100%)}
+.id-btn:hover:not(:disabled){transform:translateY(-3px);box-shadow:0 10px 36px rgba(90,158,111,.55)}
+.id-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.spinner{width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:none}
+.id-btn.loading .spinner{display:block}
+.id-btn.loading .id-txt{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Error card ── */
+.err-card{background:rgba(180,50,50,.1);border:1px solid rgba(180,50,50,.3);border-radius:var(--r);padding:16px 18px;color:#e07070;font-size:13px;display:none;margin-bottom:16px;line-height:1.6}
+.err-card.on{display:block}
+
+/* ── API banner ── */
+.api-banner{background:rgba(200,151,42,.1);border:1px solid rgba(200,151,42,.28);border-radius:13px;padding:14px 16px;font-size:13px;color:var(--gold);line-height:1.6;margin-bottom:16px}
+.api-row{display:flex;gap:8px;margin-top:9px}
+.api-inp{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(200,151,42,.28);border-radius:9px;padding:9px 12px;color:var(--cream);font-size:12px;font-family:'DM Mono',monospace;outline:none}
+.api-inp:focus{border-color:var(--gold)}
+.api-inp::placeholder{color:rgba(255,255,255,.22)}
+
+/* ── Result card ── */
+.res-card{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-bottom:18px;display:none;animation:slideUp .45s cubic-bezier(.4,0,.2,1)}
+.res-card.on{display:block}
+@keyframes slideUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+.res-head{background:linear-gradient(135deg,var(--forest),var(--moss));padding:20px 22px;display:flex;align-items:flex-start;gap:14px}
+.res-emoji{font-size:48px;filter:drop-shadow(0 3px 8px rgba(0,0,0,.3))}
+.res-title{flex:1}
+.res-common{font-family:'Playfair Display',serif;font-size:24px;color:var(--cream);line-height:1.2}
+.res-latin{font-size:12px;color:var(--mint);font-style:italic;margin-top:3px}
+.conf-ring{width:52px;height:52px;border-radius:50%;background:conic-gradient(var(--leaf) var(--pct,0%),rgba(255,255,255,.1) 0);display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0}
+.conf-ring::before{content:'';position:absolute;width:38px;height:38px;background:var(--forest);border-radius:50%}
+.conf-pct{position:relative;z-index:1;font-size:10px;font-weight:700;color:var(--leaf);font-family:'DM Mono',monospace}
+.res-body{padding:18px 20px}
+.badges{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:18px;font-size:11px;font-weight:500;border:1px solid}
+.b-res{background:rgba(90,158,111,.13);border-color:rgba(90,158,111,.38);color:var(--leaf)}
+.b-mig{background:rgba(102,153,170,.13);border-color:rgba(102,153,170,.38);color:var(--dusk)}
+.b-brd{background:rgba(200,151,42,.13);border-color:rgba(200,151,42,.38);color:var(--gold)}
+.b-win{background:rgba(122,92,56,.13);border-color:rgba(122,92,56,.38);color:var(--bark)}
+.b-rare{background:rgba(180,50,50,.13);border-color:rgba(180,50,50,.38);color:#e07070}
+.b-pass{background:rgba(142,207,160,.13);border-color:rgba(142,207,160,.38);color:var(--mint)}
+.res-desc{font-size:13px;line-height:1.75;color:#2a2a20;margin-bottom:14px}
+.season-bar{margin-bottom:14px}
+.sbar-lbl{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}
+.month-track{display:flex;gap:2px}
+.mc{flex:1;height:22px;border-radius:3px;background:#e0ddd5;position:relative;cursor:default;transition:var(--t)}
+.mc:hover{transform:scaleY(1.3)}
+.mc.breeding{background:linear-gradient(to top,var(--gold),#f0d060)}
+.mc.wintering{background:linear-gradient(to top,var(--bark),#b89060)}
+.mc.migrating{background:linear-gradient(to top,var(--dusk),var(--sky))}
+.mc.resident{background:linear-gradient(to top,var(--sage),var(--leaf))}
+.mc.current::after{content:'▼';position:absolute;top:-14px;left:50%;transform:translateX(-50%);font-size:9px;color:#444}
+.mlabels{display:flex;margin-top:3px}
+.mlabels span{flex:1;text-align:center;font-size:9px;color:var(--muted);font-family:'DM Mono',monospace}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.ii{background:rgba(26,46,26,.06);border-radius:9px;padding:9px 11px}
+.ii-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace}
+.ii-val{font-size:12px;color:var(--text);font-weight:600;margin-top:2px}
+.fun-fact{background:linear-gradient(135deg,rgba(26,46,26,.07),rgba(61,107,79,.07));border-left:3px solid var(--leaf);border-radius:0 9px 9px 0;padding:11px 13px;font-size:13px;color:#333;line-height:1.65;font-style:italic;margin-bottom:14px}
+.fun-fact strong{color:var(--sage);font-style:normal}
+
+/* ── Map action panel ── */
+.map-action-panel{background:rgba(142,207,160,.07);border:1px solid rgba(142,207,160,.2);border-radius:var(--r);padding:18px 20px;margin-bottom:18px;display:none}
+.map-action-panel.on{display:block}
+.map-action-title{font-family:'Playfair Display',serif;font-size:16px;color:var(--cream);margin-bottom:4px}
+.map-action-sub{font-size:12px;color:var(--mint);margin-bottom:14px;line-height:1.5}
+.map-opts{display:flex;flex-direction:column;gap:9px}
+.map-opt{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.05);border:1px solid rgba(142,207,160,.15);border-radius:11px;padding:12px 14px;cursor:pointer;transition:var(--t)}
+.map-opt:hover{background:rgba(142,207,160,.1);border-color:rgba(142,207,160,.3)}
+.map-opt.selected{background:rgba(90,158,111,.18);border-color:var(--leaf)}
+.map-opt-icon{font-size:22px;flex-shrink:0}
+.map-opt-info{flex:1}
+.map-opt-title{font-size:13px;color:var(--cream);font-weight:600}
+.map-opt-desc{font-size:11px;color:var(--mint);margin-top:1px}
+.map-opt-radio{width:16px;height:16px;border-radius:50%;border:2px solid rgba(142,207,160,.4);flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.map-opt.selected .map-opt-radio{border-color:var(--leaf)}
+.map-opt.selected .map-opt-radio::after{content:'';width:8px;height:8px;background:var(--leaf);border-radius:50%;display:block}
+.color-picker-row{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.color-picker-label{font-size:12px;color:var(--mint);font-family:'DM Mono',monospace}
+.color-swatches{display:flex;gap:7px;flex-wrap:wrap}
+.swatch{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:var(--t);flex-shrink:0}
+.swatch:hover{transform:scale(1.15)}
+.swatch.sel{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.5)}
+
+/* ════════════════════════════════════════
+   LIBRARY
+════════════════════════════════════════ */
+.lib-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.lib-title{font-family:'Playfair Display',serif;font-size:24px;color:var(--cream)}
+.lib-count{font-size:11px;color:var(--mint);font-family:'DM Mono',monospace;background:rgba(142,207,160,.12);padding:4px 10px;border-radius:12px}
+.lib-search{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(142,207,160,.18);border-radius:11px;padding:10px 14px;color:var(--cream);font-size:13px;outline:none;margin-bottom:16px;font-family:'DM Sans',sans-serif}
+.lib-search::placeholder{color:var(--muted)}
+.lib-search:focus{border-color:var(--leaf)}
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+@media(min-width:960px){.lib-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}}
+.lib-card{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.12);cursor:pointer;transition:var(--t);animation:fadeIn .4s ease}
+.lib-card:hover{transform:translateY(-4px);box-shadow:0 10px 32px rgba(0,0,0,.18)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.lib-card-img{width:100%;height:140px;object-fit:cover;display:block}
+.lib-card-ph{width:100%;height:140px;background:linear-gradient(135deg,var(--moss),var(--forest));display:flex;align-items:center;justify-content:center;font-size:52px}
+.lib-card-body{padding:12px 14px}
+.lib-card-nick{font-size:10px;color:var(--gold);font-family:'DM Mono',monospace;letter-spacing:.07em;text-transform:uppercase;margin-bottom:2px}
+.lib-card-name{font-family:'Playfair Display',serif;font-size:15px;color:var(--text);font-weight:700;line-height:1.2}
+.lib-card-latin{font-size:11px;color:var(--muted);font-style:italic;margin-top:2px}
+.lib-card-meta{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.lib-card-date{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace}
+.lib-card-conf{font-size:10px;color:var(--leaf);font-family:'DM Mono',monospace;background:rgba(90,158,111,.12);padding:2px 7px;border-radius:8px}
+.lib-empty{text-align:center;padding:50px 20px;color:var(--muted);grid-column:1/-1}
+.lib-empty-icon{font-size:52px;display:block;margin-bottom:12px}
+.lib-empty-title{font-family:'Playfair Display',serif;font-size:20px;color:var(--cream);margin-bottom:6px}
+
+/* ════════════════════════════════════════
+   MODALS
+════════════════════════════════════════ */
+.modal-overlay{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:22px;width:100%;max-width:580px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);animation:popIn .3s cubic-bezier(.4,0,.2,1);margin:auto}
+.modal-head{background:linear-gradient(135deg,var(--forest),var(--moss));padding:20px 22px;display:flex;align-items:flex-start;gap:14px;position:relative}
+.modal-close-btn{position:absolute;top:14px;right:14px;width:30px;height:30px;background:rgba(255,255,255,.1);border:none;border-radius:50%;color:var(--cream);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--t)}
+.modal-close-btn:hover{background:rgba(255,255,255,.2)}
+.modal-body{padding:22px}
+.modal-img{width:100%;max-height:260px;object-fit:cover;border-radius:13px;margin-bottom:18px;display:block}
+.modal-ph{width:100%;height:180px;background:linear-gradient(135deg,var(--moss),var(--forest));border-radius:13px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;font-size:70px}
+.edit-field{margin-bottom:14px}
+.edit-label{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.07em;text-transform:uppercase;margin-bottom:5px;display:block}
+.edit-input{width:100%;background:#f8f6f0;border:1px solid #ddd;border-radius:9px;padding:10px 13px;font-size:13px;color:var(--text);outline:none;font-family:'DM Sans',sans-serif;transition:var(--t)}
+.edit-input:focus{border-color:var(--leaf);background:#fff}
+textarea.edit-input{resize:vertical;min-height:80px;line-height:1.55}
+.edit-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.section-divider{border:none;border-top:1px solid #eee;margin:16px 0}
+
+/* ── Confirm/Delete dialog ── */
+.confirm-overlay{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;padding:20px}
+.confirm-overlay.open{display:flex}
+.confirm-box{background:#fff;border-radius:20px;padding:32px 28px;max-width:380px;width:100%;text-align:center;animation:popIn .28s cubic-bezier(.4,0,.2,1);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.confirm-icon{font-size:44px;margin-bottom:12px}
+.confirm-title{font-family:'Playfair Display',serif;font-size:20px;color:#1a1a16;margin-bottom:8px}
+.confirm-msg{font-size:13px;color:#666;line-height:1.6;margin-bottom:24px}
+.confirm-btns{display:flex;gap:10px;justify-content:center}
+
+/* ════════════════════════════════════════
+   MAP PAGE
+════════════════════════════════════════ */
+.map-page{display:none;position:relative;overflow:hidden}
+.map-page.active{display:block}
+/* Mobile: fill viewport minus topbar and bottom nav */
+@media(max-width:959px){
+  .map-page.active{height:calc(100vh - 56px - var(--nav-h))}
+}
+/* Desktop: fill the right column */
+@media(min-width:960px){
+  .map-page{height:calc(100vh - 56px)}
+  .map-page.active{display:block}
+}
+#leaflet-map{position:absolute;inset:0;z-index:1}
+/* Toolbar floats above map */
+.map-toolbar{position:absolute;top:14px;right:14px;z-index:400;display:flex;flex-direction:column;gap:8px;pointer-events:all}
+.map-tool-btn{width:40px;height:40px;background:#1e3a1e;border:2px solid rgba(142,207,160,.5);border-radius:10px;color:#8ecfa0;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--t);box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.map-tool-btn:hover{background:#3d6b4f;color:#fff;border-color:var(--leaf)}
+/* Legend floats above map */
+.map-legend{position:absolute;bottom:20px;left:14px;z-index:400;background:rgba(10,26,10,.92);border:1px solid rgba(142,207,160,.3);border-radius:13px;padding:12px 14px;min-width:150px;max-width:200px;box-shadow:0 2px 12px rgba(0,0,0,.5)}
+.map-legend-title{font-size:10px;color:var(--mint);font-family:'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;margin-bottom:9px}
+.map-legend-item{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--cream);margin-bottom:5px;cursor:pointer;transition:var(--t)}
+.map-legend-item:hover{color:var(--mint)}
+.map-legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.5)}
+/* Bottom sheet for adding markers */
+.add-marker-sheet{position:absolute;bottom:0;left:0;right:0;z-index:500;background:rgba(10,26,10,.97);border-radius:22px 22px 0 0;padding:22px 20px;border-top:2px solid rgba(142,207,160,.3);transform:translateY(100%);transition:transform .4s cubic-bezier(.4,0,.2,1);box-shadow:0 -4px 24px rgba(0,0,0,.5)}
+.add-marker-sheet.open{transform:translateY(0)}
+.amm-title{font-family:'Playfair Display',serif;font-size:18px;color:var(--cream);margin-bottom:4px}
+.amm-sub{font-size:12px;color:var(--mint);margin-bottom:14px}
+.amm-select{width:100%;background:rgba(255,255,255,.1);border:1px solid rgba(142,207,160,.3);border-radius:10px;padding:10px 13px;color:var(--cream);font-size:13px;outline:none;margin-bottom:12px;font-family:'DM Sans',sans-serif;appearance:none}
+.amm-select option{background:#1e3a1e;color:var(--cream)}
+.amm-close{position:absolute;top:14px;right:16px;background:rgba(255,255,255,.08);border:none;color:var(--cream);font-size:18px;cursor:pointer;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.amm-close:hover{background:rgba(255,255,255,.2)}
+/* Popup styles */
+.bird-popup{font-family:'DM Sans',sans-serif;min-width:155px}
+.bp-name{font-family:'Playfair Display',serif;font-size:14px;color:#1a1a16;font-weight:700}
+.bp-nick{font-size:11px;color:#a07020;font-style:italic;margin-top:1px}
+.bp-meta{font-size:11px;color:#888;margin-top:4px}
+.bp-btn{margin-top:8px;padding:6px 12px;background:#3d6b4f;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;width:100%;font-weight:600}
+.bp-btn:hover{background:#5a9e6f}
+
+/* Map pin icon */
+.bl-pin{cursor:pointer!important;transition:transform .18s}
+.bl-pin:hover{transform:scale(1.2)}
+
+
+/* ── Map settings sheet ── */
+.map-settings-sheet{position:absolute;bottom:0;left:0;right:0;z-index:500;background:rgba(10,26,10,.97);border-radius:22px 22px 0 0;padding:20px;border-top:2px solid rgba(142,207,160,.3);transform:translateY(100%);transition:transform .4s cubic-bezier(.4,0,.2,1);box-shadow:0 -4px 24px rgba(0,0,0,.5)}
+.map-settings-sheet.open{transform:translateY(0)}
+.amm-close-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.mss-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid rgba(142,207,160,.1)}
+.mss-toggle-row:last-child{border:none}
+.mss-toggle-info{flex:1}
+.mss-label{font-size:13px;color:#f4efe4;font-weight:600}
+.mss-sub{font-size:11px;color:#6a6a58;margin-top:2px;line-height:1.4}
+
+/* ── Toggle switch ── */
+.toggle-switch{position:relative;display:inline-block;width:42px;height:24px;flex-shrink:0}
+.toggle-switch input{opacity:0;width:0;height:0;position:absolute}
+.toggle-knob{position:absolute;inset:0;border-radius:24px;background:rgba(255,255,255,.15);cursor:pointer;transition:background .25s}
+.toggle-knob::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:3px;left:3px;transition:transform .25s;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.toggle-switch input:checked+.toggle-knob{background:var(--leaf)}
+.toggle-switch input:checked+.toggle-knob::after{transform:translateX(18px)}
+
+/* ── Avatar picker sheet ── */
+.avatar-picker-sheet{position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);display:none;align-items:flex-end;justify-content:center}
+.avatar-picker-sheet.open{display:flex}
+.avatar-picker-inner{background:#1e3a1e;border-radius:22px 22px 0 0;padding:24px 20px;width:100%;max-width:480px;border-top:2px solid rgba(142,207,160,.3)}
+.avatar-picker-inner h3{font-family:'Playfair Display',serif;font-size:18px;color:#f4efe4;margin-bottom:6px}
+.avatar-picker-inner p{font-size:12px;color:#8ecfa0;margin-bottom:18px}
+.avatar-opts{display:flex;flex-direction:column;gap:10px}
+.avatar-opt-btn{display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(142,207,160,.2);border-radius:12px;color:#f4efe4;font-size:14px;font-family:'DM Sans',sans-serif;cursor:pointer;transition:var(--t)}
+.avatar-opt-btn:hover{background:rgba(142,207,160,.12);border-color:rgba(142,207,160,.4)}
+.avatar-opt-btn .ao-icon{font-size:24px;flex-shrink:0}
+.avatar-cancel{width:100%;padding:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:#8ecfa0;font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;margin-top:10px}
+
+/* ── Rescue center markers ── */
+.rescue-icon{cursor:pointer}
+.cluster-icon{cursor:pointer!important}
+.settings-section{background:rgba(255,255,255,.04);border:1px solid rgba(142,207,160,.13);border-radius:var(--r);padding:16px 18px;margin-bottom:14px}
+.settings-title{font-family:'Playfair Display',serif;font-size:17px;color:var(--cream);margin-bottom:12px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(142,207,160,.08);gap:12px}
+.setting-row:last-child{border:none}
+.setting-label{font-size:13px;color:var(--cream);flex:1}
+.setting-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.amm-select-sm{background:rgba(255,255,255,.07);border:1px solid rgba(142,207,160,.2);border-radius:8px;padding:6px 10px;color:var(--cream);font-size:12px;outline:none;font-family:'DM Sans',sans-serif;appearance:none}
+.amm-select-sm option{background:#1e3a1e;color:var(--cream)}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--sage);color:#fff;padding:10px 22px;border-radius:22px;font-size:13px;z-index:9999;pointer-events:none;animation:tIn .3s ease,tOut .4s ease 1.7s forwards;white-space:nowrap;box-shadow:0 4px 20px rgba(90,158,111,.4)}
+@keyframes tIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes tOut{to{opacity:0;transform:translateX(-50%) translateY(-6px)}}
+
+/* Tips */
+.tip-list{list-style:none}
+.tip-list li{display:flex;align-items:flex-start;gap:9px;font-size:12px;color:var(--mint);line-height:1.55;padding:7px 0;border-bottom:1px solid rgba(142,207,160,.07)}
+.tip-list li:last-child{border:none}
+.tip-list li::before{content:attr(data-i);font-size:15px;flex-shrink:0}
+.season-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.sleg{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--mint)}
+.sleg-dot{width:10px;height:10px;border-radius:2px}
+
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+<div class="leaf-float" style="left:8%;animation-duration:14s;animation-delay:0s">🍃</div>
+<div class="leaf-float" style="left:27%;animation-duration:19s;animation-delay:5s;font-size:13px">🌿</div>
+<div class="leaf-float" style="left:63%;animation-duration:13s;animation-delay:9s;font-size:15px">🍂</div>
+<div class="leaf-float" style="left:82%;animation-duration:21s;animation-delay:2s;font-size:11px">🍃</div>
+
+
+<!-- ═══════════════ AUTH SCREEN ═══════════════ -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">🦅</div>
+    <div class="auth-brand">Bird<span>Lens</span></div>
+    <div class="auth-tagline">AI-powered bird identification with<br>migration, habitat &amp; seasonal intelligence</div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="showAuthTab('login')">Sign In</button>
+      <button class="auth-tab" id="tab-signup" onclick="showAuthTab('signup')">Create Account</button>
+    </div>
+
+    <!-- Login -->
+    <div class="auth-form active" id="form-login">
+      <div class="auth-err" id="login-err"></div>
+      <div class="auth-field">
+        <label class="auth-label">Email</label>
+        <input class="auth-input" id="login-email" type="email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Password</label>
+        <input class="auth-input" id="login-pass" type="password" placeholder="Your password" autocomplete="current-password">
+      </div>
+      <button class="auth-btn" onclick="doLogin()">Sign In →</button>
+      <div class="auth-note">Your data is stored locally on this device and linked to your account.</div>
+    </div>
+
+    <!-- Signup -->
+    <div class="auth-form" id="form-signup">
+      <div class="auth-err" id="signup-err"></div>
+      <div class="auth-field">
+        <label class="auth-label">Display Name</label>
+        <input class="auth-input" id="signup-name" type="text" placeholder="e.g. Alex the Birder" autocomplete="name">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Email</label>
+        <input class="auth-input" id="signup-email" type="email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Password</label>
+        <input class="auth-input" id="signup-pass" type="password" placeholder="At least 6 characters" autocomplete="new-password">
+      </div>
+      <button class="auth-btn" onclick="doSignup()">Create Account →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MAIN APP ═══════════════ -->
+<div id="app" class="hidden">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-icon">🦅</div>
+      <span class="logo-text">Bird<span>Lens</span></span>
+    </div>
+    <div class="topbar-right">
+      <div class="loc-pill" onclick="refreshLocation()">
+        <span class="loc-dot"></span>
+        <span id="loc-text">Locating…</span>
+      </div>
+      <div class="user-pill" onclick="switchPage('settings')" title="Profile & Settings">
+        <span id="user-avatar-top">👤</span>
+        <span id="user-label">—</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sidebar (desktop) -->
+  <aside class="sidebar" id="desktop-sidebar">
+    <!-- Permanent recent sightings panel -->
+    <div class="sbar-section">
+      <div class="sidebar-title">🐦 Recent Sightings</div>
+      <div id="sidebar-sightings-panel">
+        <div style="font-size:12px;color:var(--muted);font-style:italic;padding:6px 0">No sightings yet.</div>
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sidebar-title">📅 Season Key</div>
+      <div class="season-legend">
+        <div class="sleg"><div class="sleg-dot" style="background:var(--leaf)"></div>Resident</div>
+        <div class="sleg"><div class="sleg-dot" style="background:var(--gold)"></div>Breeding</div>
+        <div class="sleg"><div class="sleg-dot" style="background:var(--dusk)"></div>Migrating</div>
+        <div class="sleg"><div class="sleg-dot" style="background:var(--bark)"></div>Wintering</div>
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sidebar-title">💡 Photo Tips</div>
+      <ul class="tip-list">
+        <li data-i="☀️">Photograph in good, even light</li>
+        <li data-i="🎯">Capture the full bird including feet &amp; beak</li>
+        <li data-i="📏">Include a size reference when possible</li>
+        <li data-i="🌿">Note the habitat — woodland, coast, urban</li>
+        <li data-i="🎵">Unusual bird? Check local rarity alerts!</li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Page host -->
+  <div class="page-host" id="page-host">
+
+    <!-- ── IDENTIFY ── -->
+    <div class="page-section active" id="pg-identify">
+      <div class="page-inner">
+
+        <div class="slabel">Upload or Capture</div>
+        <div class="upload-zone" id="uz" ondragover="dOver(event)" ondragleave="dLeave(event)" ondrop="dDrop(event)">
+          <input type="file" accept="image/*" id="file-inp" onchange="loadFile(event)">
+          <span class="uz-icon">🦜</span>
+          <div class="uz-title">Drop a bird photo here</div>
+          <div class="uz-sub">Drag &amp; drop, or choose below</div>
+          <div class="uz-btns">
+            <button class="btn btn-primary" type="button" onclick="event.stopPropagation();document.getElementById('file-inp').click()">📁 Browse</button>
+            <button class="btn btn-secondary" type="button" onclick="event.stopPropagation();triggerCamera()">📷 Camera</button>
+          </div>
+          <input type="file" accept="image/*" capture="environment" id="cam-inp" style="display:none;position:static;opacity:1;width:0;height:0" onchange="loadFile(event)">
+        </div>
+
+        <div class="preview-wrap" id="prev-wrap">
+          <img id="prev-img" class="preview-img" alt="">
+          <div class="preview-ovl"></div>
+          <div class="preview-badge" id="prev-badge">Photo loaded</div>
+          <button class="preview-rm" onclick="clearImg()" type="button">✕</button>
+        </div>
+
+        <div class="ctx-grid">
+          <div class="ctx-card"><div class="ctx-lbl">📍 Location</div><div class="ctx-val dim" id="ctx-loc">Detecting…</div></div>
+          <div class="ctx-card"><div class="ctx-lbl">📅 Season</div><div class="ctx-val" id="ctx-date">—</div></div>
+          <div class="ctx-card"><div class="ctx-lbl">🌡️ Region</div><div class="ctx-val dim" id="ctx-region">—</div></div>
+          <div class="ctx-card"><div class="ctx-lbl">🌍 Hemisphere</div><div class="ctx-val dim" id="ctx-hemi">—</div></div>
+        </div>
+
+        <button class="id-btn" id="id-btn" onclick="identify()" type="button">
+          <div class="spinner"></div>
+          <span class="id-txt">🔍 Identify This Bird</span>
+        </button>
+
+        <div class="err-card" id="err-card"></div>
+
+        <!-- Result -->
+        <div class="res-card" id="res-card">
+          <div class="res-head">
+            <div class="res-emoji" id="r-emoji">🐦</div>
+            <div class="res-title">
+              <div class="res-common" id="r-common">—</div>
+              <div class="res-latin" id="r-latin">—</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+              <div class="conf-ring" id="r-ring"><div class="conf-pct" id="r-pct">—</div></div>
+              <button onclick="clearImg()" type="button" title="New search" style="background:rgba(255,255,255,.1);border:none;border-radius:8px;color:rgba(255,255,255,.7);font-size:10px;padding:4px 8px;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">✕ Clear</button>
+            </div>
+          </div>
+          <div class="res-body">
+            <div class="badges" id="r-badges"></div>
+            <p class="res-desc" id="r-desc"></p>
+            <div class="season-bar">
+              <div class="sbar-lbl">Annual Presence Calendar</div>
+              <div class="month-track" id="r-cal"></div>
+              <div class="mlabels"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div>
+            </div>
+            <div class="info-grid" id="r-info"></div>
+            <div class="fun-fact" id="r-fact"></div>
+          </div>
+        </div>
+
+        <!-- Map action -->
+        <div class="map-action-panel" id="map-action-panel">
+          <div class="map-action-title">📍 Save to Library & Map</div>
+          <div class="map-action-sub">Pin this bird at your current location, or save to library only.</div>
+          <div class="map-opts" id="map-opts">
+            <div class="map-opt selected" data-opt="sighting" onclick="selectMapOpt(this)">
+              <div class="map-opt-icon">📍</div>
+              <div class="map-opt-info"><div class="map-opt-title">Pin where I saw it</div><div class="map-opt-desc">Add marker at your current location</div></div>
+              <div class="map-opt-radio"></div>
+            </div>
+            <div class="map-opt" data-opt="none" onclick="selectMapOpt(this)">
+              <div class="map-opt-icon">📚</div>
+              <div class="map-opt-info"><div class="map-opt-title">Library only</div><div class="map-opt-desc">Save without adding a map marker</div></div>
+              <div class="map-opt-radio"></div>
+            </div>
+          </div>
+          <div class="color-picker-row">
+            <span class="color-picker-label">Marker color:</span>
+            <div class="color-swatches" id="color-swatches"></div>
+          </div>
+          <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="confirmAdd()" type="button">✓ Save to Library</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── LIBRARY ── -->
+    <div class="page-section" id="pg-library">
+      <div class="page-inner">
+        <div class="lib-header">
+          <div class="lib-title">📚 My Library</div>
+          <div class="lib-count" id="lib-count">0 birds</div>
+        </div>
+        <input class="lib-search" id="lib-search" placeholder="🔍 Search name, nickname…" oninput="renderLibrary()">
+        <div class="lib-grid" id="lib-grid"></div>
+      </div>
+    </div>
+
+    <!-- ── MAP ── -->
+    <div class="map-page" id="pg-map">
+      <div id="leaflet-map"></div>
+
+      <!-- Toolbar (right side) -->
+      <div class="map-toolbar">
+        <button class="map-tool-btn" title="Add marker" onclick="openAddMarker()" type="button">➕</button>
+        <button class="map-tool-btn" title="My location" onclick="goToMyLocation()" type="button">🎯</button>
+        <button class="map-tool-btn" title="Map settings" onclick="toggleMapSettings()" type="button" id="btn-map-settings">⚙️</button>
+        <button class="map-tool-btn" title="Clear all markers" onclick="askClearMarkers()" type="button">🗑️</button>
+      </div>
+
+      <!-- Map settings panel (slides up from bottom) -->
+      <div class="map-settings-sheet" id="map-settings-sheet">
+        <div class="amm-close-row">
+          <div class="amm-title">⚙️ Map Settings</div>
+          <button class="amm-close" onclick="toggleMapSettings()" type="button">✕</button>
+        </div>
+        <div class="mss-toggle-row">
+          <div class="mss-toggle-info">
+            <div class="mss-label">🏷️ Show Bird Names</div>
+            <div class="mss-sub">Display species name under each marker</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="tog-names" onchange="applyMapSettings()">
+            <span class="toggle-knob"></span>
+          </label>
+        </div>
+        <div class="mss-toggle-row">
+          <div class="mss-toggle-info">
+            <div class="mss-label">✱ Alternate Marker Symbol</div>
+            <div class="mss-sub">Use asterisk symbol instead of pin</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="tog-symbol" onchange="applyMapSettings()">
+            <span class="toggle-knob"></span>
+          </label>
+        </div>
+        <div class="mss-toggle-row">
+          <div class="mss-toggle-info">
+            <div class="mss-label">🏥 Show Wildlife Rescue Centers</div>
+            <div class="mss-sub">Display nearby wildlife rehab facilities from OpenStreetMap</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="tog-rescue" onchange="applyMapSettings()">
+            <span class="toggle-knob"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Add marker sheet -->
+      <div class="add-marker-sheet" id="amm">
+        <button class="amm-close" onclick="closeAddMarker()" type="button">✕</button>
+        <div class="amm-title">📍 Add Bird Marker</div>
+        <div class="amm-sub">Pick a bird from your library then place it on the map</div>
+        <select class="amm-select" id="amm-bird-select"><option value="">— Select a bird —</option></select>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <span style="font-size:12px;color:#8ecfa0;font-family:'DM Mono',monospace">Color:</span>
+          <div class="color-swatches" id="amm-swatches"></div>
+        </div>
+        <!-- Placement options -->
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;color:#8ecfa0;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Placement</div>
+          <div style="display:flex;flex-direction:column;gap:7px" id="amm-place-opts">
+            <div class="map-opt selected" data-place="exact" onclick="selectPlaceOpt(this)">
+              <div class="map-opt-icon" style="font-size:16px">🎯</div>
+              <div class="map-opt-info"><div class="map-opt-title">Exact current location</div></div>
+              <div class="map-opt-radio"></div>
+            </div>
+            <div class="map-opt" data-place="nudge" onclick="selectPlaceOpt(this)">
+              <div class="map-opt-icon" style="font-size:16px">↗️</div>
+              <div class="map-opt-info"><div class="map-opt-title">Nudge slightly outward</div><div class="map-opt-desc">Avoids overlapping nearby pins</div></div>
+              <div class="map-opt-radio"></div>
+            </div>
+            <div class="map-opt" data-place="custom" onclick="selectPlaceOpt(this)">
+              <div class="map-opt-icon" style="font-size:16px">🖱️</div>
+              <div class="map-opt-info"><div class="map-opt-title">Choose on map</div><div class="map-opt-desc">Click anywhere to place</div></div>
+              <div class="map-opt-radio"></div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" style="flex:1" onclick="startPlacingMarker()" type="button">📍 Place Marker</button>
+          <button class="btn btn-secondary" onclick="closeAddMarker()" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SETTINGS ── -->
+    <div class="page-section" id="pg-settings">
+      <div class="page-inner">
+        <div class="slabel" style="margin-bottom:18px">Profile & Settings</div>
+
+        <!-- Profile card -->
+        <div class="settings-section">
+          <div class="settings-title">👤 Profile</div>
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">
+            <!-- Avatar -->
+            <div style="position:relative;flex-shrink:0">
+              <div id="profile-avatar" style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--sage),var(--leaf));display:flex;align-items:center;justify-content:center;font-size:30px;overflow:hidden;border:3px solid rgba(142,207,160,.4);flex-shrink:0">
+                <span id="profile-avatar-emoji">👤</span>
+                <img id="profile-avatar-img" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:50%;position:absolute;inset:0" alt="Profile">
+              </div>
+              <button type="button" onclick="openAvatarPicker()" style="position:absolute;bottom:-2px;right:-2px;width:24px;height:24px;border-radius:50%;background:var(--sage);border:2px solid #fff;color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Change photo">✏️</button>
+            </div>
+            <div style="flex:1">
+              <div style="font-family:'Playfair Display',serif;font-size:18px;color:var(--cream);font-weight:700" id="set-username">—</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px" id="set-email">—</div>
+              <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+                <button type="button" onclick="openAvatarPicker()" class="btn btn-secondary btn-sm">📷 Change Photo</button>
+                <button type="button" onclick="signOut()" class="btn btn-danger btn-sm">Sign Out</button>
+              </div>
+            </div>
+          </div>
+          <!-- Hidden inputs for avatar -->
+          <input type="file" id="avatar-file-inp" accept="image/*" style="display:none" onchange="handleAvatarFile(event)">
+          <input type="file" id="avatar-cam-inp" accept="image/*" capture="user" style="display:none" onchange="handleAvatarFile(event)">
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title">🔬 Data Sources</div>
+          <div class="setting-row">
+            <div><div class="setting-label">Bird identification</div><div class="setting-sub">TensorFlow.js MobileNet + iNaturalist local data</div></div>
+            <span style="font-size:11px;color:var(--leaf);font-family:'DM Mono',monospace">Free ✓</span>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">Species information</div><div class="setting-sub">Wikipedia REST API</div></div>
+            <span style="font-size:11px;color:var(--leaf);font-family:'DM Mono',monospace">Free ✓</span>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">Season &amp; migration data</div><div class="setting-sub">iNaturalist citizen science</div></div>
+            <span style="font-size:11px;color:var(--leaf);font-family:'DM Mono',monospace">Free ✓</span>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">Wildlife rescue centers</div><div class="setting-sub">OpenStreetMap Overpass API</div></div>
+            <span style="font-size:11px;color:var(--leaf);font-family:'DM Mono',monospace">Free ✓</span>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title">🗺️ Map Preferences</div>
+          <div class="setting-row">
+            <div><div class="setting-label">Auto-add to map</div><div class="setting-sub">Default behavior after identification</div></div>
+            <select class="amm-select-sm" id="set-auto-map" onchange="savePref()">
+              <option value="ask">Ask me each time</option>
+              <option value="sighting">Always (my location)</option>
+              <option value="none">Never</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title">📊 Library</div>
+          <div class="setting-row">
+            <div><div class="setting-label">Total birds saved</div></div>
+            <div style="font-size:13px;color:var(--mint);font-family:'DM Mono',monospace" id="set-lib-size">0</div>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">Map markers</div></div>
+            <div style="font-size:13px;color:var(--mint);font-family:'DM Mono',monospace" id="set-marker-count">0</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /page-host -->
+
+  <!-- Bottom nav (mobile) -->
+  <nav class="bottomnav">
+    <button class="nav-btn active" id="nav-identify" onclick="switchPage('identify')" type="button"><span class="nav-icon">🔍</span><span>Identify</span></button>
+    <button class="nav-btn" id="nav-library" onclick="switchPage('library')" type="button"><span class="nav-icon">📚</span><span>Library</span></button>
+    <button class="nav-btn" id="nav-map" onclick="switchPage('map')" type="button"><span class="nav-icon">🗺️</span><span>Map</span></button>
+    <button class="nav-btn" id="nav-settings" onclick="switchPage('settings')" type="button"><span class="nav-icon">⚙️</span><span>Settings</span></button>
+  </nav>
+
+</div><!-- /app -->
+
+<!-- ═══ BIRD DETAIL MODAL ═══ -->
+<div class="modal-overlay" id="bird-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="res-emoji" id="bm-emoji">🐦</div>
+      <div class="res-title" style="flex:1">
+        <div class="res-common" id="bm-common">—</div>
+        <div class="res-latin" id="bm-latin">—</div>
+      </div>
+      <button class="modal-close-btn" onclick="closeModal()" type="button">✕</button>
+    </div>
+    <div class="modal-body" id="bird-modal-body"></div>
+  </div>
+</div>
+
+<!-- ═══ AVATAR PICKER ═══ -->
+<div class="avatar-picker-sheet" id="avatar-picker-sheet">
+  <div class="avatar-picker-inner">
+    <h3>Change Profile Photo</h3>
+    <p>Choose how you'd like to update your profile picture</p>
+    <div class="avatar-opts">
+      <button class="avatar-opt-btn" type="button" onclick="avatarFromGallery()">
+        <span class="ao-icon">🖼️</span><span>Upload from Gallery</span>
+      </button>
+      <button class="avatar-opt-btn" type="button" onclick="avatarFromCamera()">
+        <span class="ao-icon">📷</span><span>Take a Photo</span>
+      </button>
+      <button class="avatar-opt-btn" type="button" onclick="removeAvatar()">
+        <span class="ao-icon">🗑️</span><span>Remove Photo</span>
+      </button>
+    </div>
+    <button class="avatar-cancel" onclick="closeAvatarPicker()" type="button">Cancel</button>
+  </div>
+</div>
+
+<!-- ═══ CONFIRM DIALOG ═══ -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirm-icon">🗑️</div>
+    <div class="confirm-title" id="confirm-title">Are you sure?</div>
+    <div class="confirm-msg" id="confirm-msg">This action cannot be undone.</div>
+    <div class="confirm-btns">
+      <button class="btn btn-danger-solid" id="confirm-yes" type="button">Yes, Delete</button>
+      <button class="btn btn-secondary" onclick="closeConfirm()" type="button">No, Keep It</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════
+//  CONSTANTS
+// ══════════════════════════════════════════════════
+const COLORS = ['#5a9e6f','#c8972a','#6699aa','#c85050','#9b70c8','#c87050','#50a0c8','#c85090'];
+const CLABELS = ['Green','Amber','Blue','Red','Purple','Orange','Sky','Pink'];
+
+// ══════════════════════════════════════════════════
+//  STORAGE HELPERS
+// ══════════════════════════════════════════════════
+const lsGet = k => { try{ return localStorage.getItem(k); }catch{ return null; } };
+const lsSet = (k,v) => { try{ localStorage.setItem(k,v); }catch{} };
+const lsJson = (k, def) => { try{ const v=lsGet(k); return v?JSON.parse(v):def; }catch{ return def; } };
+
+// ══════════════════════════════════════════════════
+//  AUTH (local, per-device)
+// ══════════════════════════════════════════════════
+let currentUser = null; // {id, name, email}
+
+function getUsers(){ return lsJson('bl_users', {}); }
+function saveUsers(u){ lsSet('bl_users', JSON.stringify(u)); }
+function userKey(uid, k){ return `bl_u_${uid}_${k}`; }
+
+function showAuthTab(tab){
+  document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.auth-form').forEach(f=>f.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('form-'+tab).classList.add('active');
+}
+
+function authErr(formId, msg){
+  const el = document.getElementById(formId+'-err');
+  el.textContent = msg; el.classList.add('on');
+}
+function clearAuthErr(formId){ document.getElementById(formId+'-err').classList.remove('on'); }
+
+function doSignup(){
+  clearAuthErr('signup');
+  const name  = document.getElementById('signup-name').value.trim();
+  const email = document.getElementById('signup-email').value.trim().toLowerCase();
+  const pass  = document.getElementById('signup-pass').value;
+  if(!name){ authErr('signup','Please enter your display name.'); return; }
+  if(!email || !email.includes('@')){ authErr('signup','Please enter a valid email address.'); return; }
+  if(pass.length < 6){ authErr('signup','Password must be at least 6 characters.'); return; }
+
+  const users = getUsers();
+  const exists = Object.values(users).find(u=>u.email===email);
+  if(exists){ authErr('signup','An account with this email already exists.'); return; }
+
+  const uid = 'u_' + Date.now();
+  users[uid] = { id:uid, name, email, passHash: simpleHash(pass) };
+  saveUsers(users);
+  loginAs(users[uid]);
+}
+
+function doLogin(){
+  clearAuthErr('login');
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const pass  = document.getElementById('login-pass').value;
+  if(!email){ authErr('login','Please enter your email.'); return; }
+  if(!pass){ authErr('login','Please enter your password.'); return; }
+
+  const users = getUsers();
+  const user = Object.values(users).find(u=>u.email===email);
+  if(!user){ authErr('login','No account found with this email.'); return; }
+  if(user.passHash !== simpleHash(pass)){ authErr('login','Incorrect password.'); return; }
+  loginAs(user);
+}
+
+function simpleHash(str){
+  let h = 0x811c9dc5;
+  for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h>>>0).toString(16);
+}
+
+function loginAs(user){
+  currentUser = user;
+  lsSet('bl_session', user.id);
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  loadUserData();
+  bootApp();
+}
+
+function signOut(){
+  lsSet('bl_session','');
+  currentUser = null;
+  S.library=[]; S.markers=[];
+  // Reset avatar
+  const img=document.getElementById('profile-avatar-img');
+  const emoji=document.getElementById('profile-avatar-emoji');
+  const top=document.getElementById('user-avatar-top');
+  if(img) img.style.display='none';
+  if(emoji) emoji.style.display='';
+  if(top) top.textContent='👤';
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('auth-screen').classList.remove('hidden');
+  ['login-email','login-pass','signup-name','signup-email','signup-pass'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  showAuthTab('login');
+}
+
+function tryAutoLogin(){
+  const uid = lsGet('bl_session');
+  if(!uid) return false;
+  const users = getUsers();
+  if(users[uid]){ loginAs(users[uid]); return true; }
+  return false;
+}
+
+// ══════════════════════════════════════════════════
+//  USER DATA
+// ══════════════════════════════════════════════════
+let S = {
+  location:null, locationName:'',
+  imageB64:null, imageType:'image/jpeg',
+  currentResult:null, selectedMapOpt:'sighting',
+  selectedColor:COLORS[0],
+  library:[], markers:[],
+  prefs:{autoMap:'ask'},
+  editingId:null, placingMarker:false,
+  ammColor:COLORS[0], ammBirdId:null,
+};
+
+function loadUserData(){
+  if(!currentUser) return;
+  const uid = currentUser.id;
+  S.library = lsJson(userKey(uid,'lib'), []);
+  S.markers = lsJson(userKey(uid,'markers'), []);
+  S.prefs   = lsJson(userKey(uid,'prefs'), {autoMap:'ask'});
+}
+
+function saveLib(){ if(currentUser) lsSet(userKey(currentUser.id,'lib'), JSON.stringify(S.library)); }
+function saveMarkers(){ if(currentUser) lsSet(userKey(currentUser.id,'markers'), JSON.stringify(S.markers)); }
+function savePrefs(){ if(currentUser) lsSet(userKey(currentUser.id,'prefs'), JSON.stringify(S.prefs)); }
+
+// ══════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', ()=>{
+  if(!tryAutoLogin()){
+    document.getElementById('auth-screen').classList.remove('hidden');
+  }
+  // Enter key on auth
+  document.getElementById('login-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  document.getElementById('signup-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doSignup(); });
+});
+
+function bootApp(){
+  updateDate();
+  getLocation();
+  buildSwatches('color-swatches', c=>{ S.selectedColor=c; });
+  buildSwatches('amm-swatches', c=>{ S.ammColor=c; });
+  const sel = document.getElementById('set-auto-map');
+  if(sel) sel.value = S.prefs.autoMap||'ask';
+  const firstName = currentUser.name.split(' ')[0];
+  document.getElementById('user-label').textContent = firstName;
+  document.getElementById('set-username').textContent = currentUser.name;
+  document.getElementById('set-email').textContent = currentUser.email;
+  const savedAvatar = lsGet(userKey(currentUser.id,'avatar'));
+  if(savedAvatar) applyAvatar(savedAvatar);
+  renderLibrary();
+  renderSidebar();
+  updateSettingsCounts();
+  // Pre-warm bird vision model so first identification is faster
+  setTimeout(()=>loadBirdModel().catch(()=>{}), 2000);
+}
+
+// ══════════════════════════════════════════════════
+//  PAGE NAV
+// ══════════════════════════════════════════════════
+let currentPage = 'identify';
+function switchPage(p){
+  currentPage = p;
+  document.querySelectorAll('.page-section,.map-page').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  if(p==='map'){
+    document.getElementById('pg-map').classList.add('active');
+    initMap(); // also calls invalidateSize inside
+    if(map) setTimeout(()=>map.invalidateSize(),80);
+  } else {
+    document.getElementById('pg-'+p).classList.add('active');
+  }
+  const nb=document.getElementById('nav-'+p);
+  if(nb) nb.classList.add('active');
+  if(p==='library') renderLibrary();
+  if(p==='settings') updateSettingsCounts();
+}
+
+// ══════════════════════════════════════════════════
+//  LOCATION
+// ══════════════════════════════════════════════════
+function getLocation(){
+  if(!navigator.geolocation){ setLocFallback(); return; }
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    S.location={lat:pos.coords.latitude, lon:pos.coords.longitude};
+    const name = await revGeo(pos.coords.latitude, pos.coords.longitude);
+    S.locationName = name;
+    document.getElementById('loc-text').textContent = name.split(',')[0];
+    document.getElementById('ctx-loc').textContent = name;
+    document.getElementById('ctx-loc').classList.remove('dim');
+    document.getElementById('ctx-hemi').textContent = (pos.coords.latitude>=0?'Northern':'Southern')+' Hemisphere';
+    document.getElementById('ctx-hemi').classList.remove('dim');
+    document.getElementById('ctx-region').textContent = regionType(pos.coords.latitude);
+    document.getElementById('ctx-region').classList.remove('dim');
+  }, ()=>setLocFallback());
+}
+function refreshLocation(){ document.getElementById('loc-text').textContent='Locating…'; getLocation(); }
+async function revGeo(lat, lon){
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+    const d=await r.json();
+    const city=d.address?.city||d.address?.town||d.address?.village||d.address?.county||'';
+    const country=d.address?.country||'';
+    return city?`${city}, ${country}`:country||`${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+  }catch{ return `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`; }
+}
+function setLocFallback(){
+  document.getElementById('loc-text').textContent='No location';
+  ['ctx-loc','ctx-hemi','ctx-region'].forEach(id=>{
+    const el=document.getElementById(id);
+    el.textContent='Unavailable'; el.classList.add('dim');
+  });
+}
+function regionType(lat){
+  const a=Math.abs(lat);
+  if(a<23.5) return 'Tropical';
+  if(a<40) return 'Subtropical';
+  if(a<60) return 'Temperate';
+  return 'Subarctic';
+}
+
+// ══════════════════════════════════════════════════
+//  DATE
+// ══════════════════════════════════════════════════
+function updateDate(){
+  const now=new Date();
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const seasons=['Winter','Winter','Spring','Spring','Spring','Summer','Summer','Summer','Autumn','Autumn','Autumn','Winter'];
+  document.getElementById('ctx-date').textContent=`${months[now.getMonth()]} · ${seasons[now.getMonth()]}`;
+}
+function currentSeason(){
+  const m=new Date().getMonth();
+  return ['Winter','Winter','Spring','Spring','Spring','Summer','Summer','Summer','Autumn','Autumn','Autumn','Winter'][m];
+}
+
+// ══════════════════════════════════════════════════
+//  FILE HANDLING
+// ══════════════════════════════════════════════════
+function loadFile(e){
+  const f=e.target.files[0]; if(!f) return;
+  S.imageType=f.type||'image/jpeg';
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    S.imageB64=ev.target.result.split(',')[1];
+    document.getElementById('prev-img').src=ev.target.result;
+    document.getElementById('prev-wrap').classList.add('on');
+    document.getElementById('uz').style.display='none';
+    document.getElementById('prev-badge').textContent=f.name||'Photo loaded';
+    hideResult();
+  };
+  reader.readAsDataURL(f);
+}
+function dOver(e){ e.preventDefault(); document.getElementById('uz').classList.add('drag'); }
+function dLeave(){ document.getElementById('uz').classList.remove('drag'); }
+function dDrop(e){
+  e.preventDefault(); document.getElementById('uz').classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type.startsWith('image/')) loadFile({target:{files:[f]}});
+}
+function triggerCamera(){ document.getElementById('cam-inp').click(); }
+function clearImg(){
+  S.imageB64=null; S.imageType='image/jpeg';
+  document.getElementById('prev-wrap').classList.remove('on');
+  document.getElementById('uz').style.display='';
+  document.getElementById('file-inp').value='';
+  document.getElementById('cam-inp').value='';
+  hideResult();
+  clearErr();
+}
+
+
+
+// ══════════════════════════════════════════════════
+
+
+// ══════════════════════════════════════════════════
+//  IDENTIFY — Specialist Bird Vision + iNaturalist
+//
+//  Uses a 965-species bird classifier (EfficientNet-
+//  based, pre-trained on iNaturalist 2021 data) via
+//  TF.js, then cross-references with local iNaturalist
+//  observations and pulls accurate info from Wikipedia.
+//  No API key. Fully in-browser.
+// ══════════════════════════════════════════════════
+
+// ── Dynamic script loader ──────────────────────────
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    if(document.querySelector(`script[src="${src}"]`)){ res(); return; }
+    const s=document.createElement('script');
+    s.src=src; s.onload=res; s.onerror=()=>rej(new Error('Failed to load: '+src));
+    document.head.appendChild(s);
+  });
+}
+
+// ── Model cache ────────────────────────────────────
+let _model=null, _labels=null, _modelPromise=null;
+
+async function loadBirdModel(){
+  if(_model && _labels) return {model:_model, labels:_labels};
+  if(_modelPromise) return _modelPromise;
+  _modelPromise=(async()=>{
+    setLoadingMsg('Loading TensorFlow.js…');
+    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js');
+
+    setLoadingMsg('Loading bird vision model…');
+    // EfficientNet-Lite4 fine-tuned on iNaturalist birds (1,486 Aves classes)
+    // Hosted on TF Hub — TFJS-compatible SavedModel format
+    const MODEL_URL = 'https://tfhub.dev/google/aiy/vision/classifier/birds_V1/1/tfjs/1';
+
+    let model;
+    try{
+      // Try TF Hub model first (best accuracy — 965 species)
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.20.0/dist/tf-converter.min.js');
+      model = await tf.loadGraphModel(MODEL_URL, {fromTFHub:true});
+    }catch{
+      // Fallback: MobileNet (fewer species but reliable)
+      setLoadingMsg('Loading fallback bird model…');
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js');
+      model = await mobilenet.load({version:2, alpha:1.0});
+      _model=model; _labels='mobilenet'; return {model, labels:'mobilenet'};
+    }
+
+    // Fetch the bird label map
+    setLoadingMsg('Loading species labels…');
+    const labelsResp = await fetch('https://www.gstatic.com/aihub/tfhub/labelmaps/aiy_birds_V1_labelmap.csv');
+    const csv = await labelsResp.text();
+    // CSV: id,name — parse into array indexed by class id
+    const labelMap={};
+    csv.split('\n').slice(1).forEach(row=>{
+      const [id,...rest]=row.split(',');
+      const name=rest.join(',').trim().replace(/^"|"$/g,'');
+      if(id && name) labelMap[parseInt(id)]=name;
+    });
+    _model=model; _labels=labelMap;
+    return {model, labels:labelMap};
+  })();
+  return _modelPromise;
+}
+
+// ── Resize image to tensor ─────────────────────────
+async function imageToTensor(b64, type, size=224){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const t=tf.browser.fromPixels(img)
+          .resizeBilinear([size,size])
+          .toFloat()
+          .div(255.0)
+          .expandDims(0);
+        res(t);
+      }catch(e){ rej(e); }
+    };
+    img.onerror=()=>rej(new Error('Could not decode image.'));
+    img.src=`data:${type};base64,${b64}`;
+  });
+}
+
+// ── Run the bird model ─────────────────────────────
+async function classifyBird(b64, type){
+  const {model, labels} = await loadBirdModel();
+
+  if(labels==='mobilenet'){
+    // MobileNet path
+    const imgEl=await new Promise((res,rej)=>{
+      const i=new Image(); i.onload=()=>res(i); i.onerror=rej;
+      i.src=`data:${type};base64,${b64}`;
+    });
+    const preds=await model.classify(imgEl,20);
+    return preds.map(p=>({name:p.className, prob:p.probability, source:'mobilenet'}));
+  }
+
+  // AIY Birds path — returns logits tensor
+  const tensor = await imageToTensor(b64, type, 224);
+  const logits  = model.predict(tensor);
+  const probs   = tf.softmax(logits);
+  const vals    = await probs.data();
+  tensor.dispose(); logits.dispose(); probs.dispose();
+
+  // Top-10 predictions
+  const indexed=[...vals].map((p,i)=>({i,p})).sort((a,b)=>b.p-a.p).slice(0,10);
+  return indexed.map(({i,p})=>({
+    name:  labels[i] || `Species ${i}`,
+    prob:  p,
+    source:'aiy'
+  }));
+}
+
+// All bird-family terms to filter MobileNet fallback output
+const BIRD_TERMS=new Set([
+  'bird','robin','sparrow','finch','jay','crow','raven','eagle','hawk','owl',
+  'duck','swan','goose','penguin','flamingo','heron','egret','crane','pelican',
+  'albatross','magpie','pigeon','dove','parrot','macaw','cockatoo','toucan',
+  'hummingbird','woodpecker','kingfisher','swallow','wren','thrush','blackbird',
+  'chickadee','warbler','starling','cardinal','tanager','grouse','pheasant',
+  'quail','partridge','peacock','ostrich','kite','buzzard','vulture','falcon',
+  'stork','ibis','spoonbill','bittern','coot','dunlin','snipe','plover',
+  'sandpiper','tern','gull','puffin','auk','guillemot','gannet','cormorant',
+  'lark','bulbul','lorikeet','bee eater','hornbill','cuckoo','emu','kiwi',
+  'brambling','junco','limpkin','bustard','merganser','teal','grebe','loon',
+  'mockingbird','dipper','waxwing','ptarmigan','hen','cock','rooster','fowl',
+  'chaffinch','bunting','oriole','nuthatch','flycatcher','wagtail','bluebird',
+  'avocet','oystercatcher','rosella','cockatiel','budgerigar','swift','booby',
+  'frigatebird','shearwater','petrel','sunbird','weaver','skimmer','skua',
+  'tropicbird','parakeet','lovebird','myna','starling','jacana','curlew',
+  'redshank','lapwing','dotterel','whimbrel','stint','turnstone','godwit'
+]);
+
+// ── iNaturalist: local birds near location ─────────
+async function nearbyBirds(lat,lon){
+  const ctrl=new AbortController(), tid=setTimeout(()=>ctrl.abort(),10000);
+  try{
+    const url=`https://api.inaturalist.org/v1/observations/species_counts`
+      +`?lat=${lat}&lng=${lon}&radius=100&iconic_taxa=Aves`
+      +`&verifiable=true&per_page=40&order_by=observations_count`;
+    const r=await fetch(url,{signal:ctrl.signal});
+    clearTimeout(tid);
+    return r.ok ? ((await r.json()).results||[]).map(x=>x.taxon).filter(Boolean) : [];
+  }catch{ clearTimeout(tid); return []; }
+}
+
+// ── iNaturalist: taxa text search ──────────────────
+async function searchINatTaxon(query){
+  if(!query) return null;
+  const ctrl=new AbortController(), tid=setTimeout(()=>ctrl.abort(),8000);
+  try{
+    const r=await fetch(
+      `https://api.inaturalist.org/v1/taxa?q=${encodeURIComponent(query)}&iconic_taxa=Aves&per_page=5&order_by=observations_count`,
+      {signal:ctrl.signal}
+    );
+    clearTimeout(tid);
+    return r.ok ? (await r.json()).results?.[0]||null : null;
+  }catch{ clearTimeout(tid); return null; }
+}
+
+// ── iNaturalist: full taxon with wikipedia_summary ─
+async function fetchTaxonDetail(id){
+  const ctrl=new AbortController(), tid=setTimeout(()=>ctrl.abort(),7000);
+  try{
+    const r=await fetch(`https://api.inaturalist.org/v1/taxa/${id}`,{signal:ctrl.signal});
+    clearTimeout(tid);
+    return r.ok ? (await r.json()).results?.[0]||null : null;
+  }catch{ clearTimeout(tid); return null; }
+}
+
+// ── Score: MobileNet prediction vs iNat taxon name ─
+function scoreMatch(taxon, preds){
+  const names=[
+    taxon.preferred_common_name||'',
+    taxon.name||''
+  ].map(s=>s.toLowerCase());
+  let best=0;
+  for(const p of preds){
+    const pn=p.name.toLowerCase();
+    for(const n of names){
+      let s=0;
+      if(n===pn) s=50;
+      else if(n.includes(pn)||pn.includes(n)) s=20;
+      else{
+        const pw=pn.split(/[\s,]+/), nw=n.split(/\s+/);
+        s=pw.filter(w=>w.length>3&&nw.some(x=>x.includes(w)||w.includes(x))).length*8;
+      }
+      if(s>best) best=s;
+    }
+  }
+  return best * (1 + preds[0].prob*2);
+}
+
+// ════════════════════════════════════════════════════
+//  MAIN IDENTIFY FUNCTION
+// ════════════════════════════════════════════════════
+async function identify(){
+  if(!S.imageB64){ showErr('Please upload or capture a bird photo first.'); return; }
+  setLoading(true); hideResult(); clearErr();
+
+  try{
+    // Stage 1 — Run bird vision model
+    setLoadingMsg('Starting identification…');
+    const preds = await classifyBird(S.imageB64, S.imageType||'image/jpeg');
+
+    // If MobileNet fallback: filter to bird predictions only
+    const birdPreds = preds[0]?.source==='mobilenet'
+      ? preds.filter(p=>[...BIRD_TERMS].some(t=>p.name.toLowerCase().includes(t)))
+      : preds;
+
+    if(!birdPreds.length){
+      const topName=preds[0]?.name?.split(',')[0]||'a non-bird subject';
+      showErr(`⚠️ No bird detected — image appears to show ${topName}. Please upload a clear, well-lit photo where the bird fills most of the frame.`);
+      return;
+    }
+
+    const topPred = birdPreds[0];
+    const topName = topPred.name;
+
+    // Stage 2 — Resolve to an exact iNaturalist taxon
+    setLoadingMsg('Resolving species…');
+    let taxon=null;
+
+    // 2a. Direct name search first (fastest, most accurate for AIY model)
+    taxon = await searchINatTaxon(topName);
+
+    // 2b. Cross-reference with local species if we have location
+    if(S.location){
+      setLoadingMsg('Checking local species…');
+      const local = await nearbyBirds(S.location.lat, S.location.lon);
+      if(local.length){
+        const scored = local
+          .map(t=>({t, s:scoreMatch(t, birdPreds.slice(0,3))}))
+          .sort((a,b)=>b.s-a.s);
+        const localBest=scored[0];
+        // Use local match only if its score beats the direct search confidence
+        // OR if direct search gave nothing
+        const directConf = taxon ? topPred.prob : 0;
+        if(!taxon || (localBest.s > 15 && localBest.s > directConf*30)){
+          taxon = localBest.t;
+        }
+      }
+    }
+
+    // 2c. Fallback: try individual words from the prediction name
+    if(!taxon){
+      const words=topName.split(/[\s,/]+/).filter(w=>w.length>3);
+      for(const w of words){
+        taxon=await searchINatTaxon(w);
+        if(taxon) break;
+      }
+    }
+
+    if(!taxon){
+      showErr('⚠️ Could not identify this bird species. For best results, allow location access and ensure the bird is clearly visible and well-lit.');
+      return;
+    }
+
+    // Stage 3 — Fetch full details + Wikipedia in parallel
+    setLoadingMsg('Loading species information…');
+    const commonName = taxon.preferred_common_name||taxon.name;
+    const sciName    = taxon.name;
+
+    const [detail, wikiData, histData] = await Promise.all([
+      fetchTaxonDetail(taxon.id),
+      wikiSummary(sciName, commonName),
+      S.location ? iNatHistogram(taxon.id, S.location.lat, S.location.lon) : Promise.resolve(null)
+    ]);
+
+    const ft       = detail||taxon;
+    const finalCommon = ft.preferred_common_name||ft.name;
+    const finalSci    = ft.name;
+    const extract  = wikiData?.extract||ft.wikipedia_summary||null;
+
+    const now      = new Date();
+    const monthNum = now.getMonth()+1;
+    const calendar = buildCalendar(histData, S.location);
+    const curStat  = calendar[monthNum-1]?.status||'resident';
+    const iucn     = ft.conservation_status?.status_name||ft.conservation_statuses?.[0]?.status_name||null;
+
+    // Confidence: AIY model is more accurate, scale accordingly
+    const conf = topPred.source==='aiy'
+      ? Math.min(94, Math.max(40, Math.round(topPred.prob*100*0.95+5)))
+      : Math.min(82, Math.max(28, Math.round(topPred.prob*200+25)));
+
+    const result={
+      identified:true, confidence:conf,
+      commonName:finalCommon, scientificName:finalSci,
+      emoji:birdEmoji({preferred_common_name:finalCommon, name:finalSci}),
+      description: buildDescription(extract, finalCommon, finalSci),
+      statusInLocation:curStat,
+      statusBadges:buildBadges(calendar, conf, iucn),
+      currentSeasonStatus:seasonSentence(curStat, finalCommon, now),
+      migrationInfo:migrationText(calendar, S.locationName),
+      calendarPresence:calendar,
+      habitat:  extractHabitat(extract),
+      diet:     extractDiet(extract),
+      wingspan: extractMeasure(extract,'wingspan'),
+      weight:   extractMeasure(extract,'weight'),
+      conservationStatus:iucn?`${iucn} (IUCN)`:null,
+      funFact:  extractFunFact(extract, finalCommon),
+      similarSpecies:extractSimilar(extract, finalCommon),
+      habitatLat:S.location?.lat||0,
+      habitatLon:S.location?.lon||0,
+      iNatUrl:`https://www.inaturalist.org/taxa/${ft.id}`,
+      imageB64:S.imageB64, imageType:S.imageType,
+    };
+
+    S.currentResult=result;
+    renderResult(result, monthNum);
+    document.getElementById('map-action-panel').classList.add('on');
+    setTimeout(()=>document.getElementById('res-card')
+      .scrollIntoView({behavior:'smooth',block:'nearest'}),100);
+
+  }catch(err){
+    console.error('Identification error:',err);
+    showErr('Identification failed: '+err.message);
+  }finally{
+    setLoading(false); setLoadingMsg('');
+  }
+}
+
+function setLoadingMsg(msg){
+  const btn = document.getElementById('id-btn');
+  let lbl = btn.querySelector('.loading-msg');
+  if(msg){
+    if(!lbl){
+      lbl = document.createElement('span');
+      lbl.className = 'loading-msg';
+      lbl.style.cssText = 'font-size:11px;opacity:.75;font-family:"DM Mono",monospace;font-style:italic;display:block;margin-top:3px';
+      btn.appendChild(lbl);
+    }
+    lbl.textContent = msg;
+  } else {
+    if(lbl) lbl.remove();
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  iNATURALIST & WIKIPEDIA HELPERS (all GET · no auth)
+// ══════════════════════════════════════════════════
+
+// Resize image via canvas to maxDim × maxDim
+function resizeImage(b64, mime, maxDim=800){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.88).split(',')[1]);
+    };
+    img.onerror = ()=>resolve(b64);
+    img.src = `data:${mime};base64,${b64}`;
+  });
+}
+
+// Fetch Wikipedia summary — scientific name first, then common name
+async function wikiSummary(sciName, commonName){
+  const tries = [sciName, commonName].filter(Boolean);
+  for(const name of tries){
+    try{
+      const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`);
+      if(r.ok){
+        const d = await r.json();
+        if(d.type !== 'disambiguation' && d.extract) return d;
+      }
+    }catch{}
+  }
+  return null;
+}
+
+// Fetch monthly observation histogram from iNaturalist for a location
+async function iNatHistogram(taxonId, lat, lon){
+  try{
+    const url = `https://api.inaturalist.org/v1/observations/histogram?taxon_id=${taxonId}&lat=${lat}&lng=${lon}&radius=250&date_field=observed&interval=month_of_year`;
+    const r = await fetch(url);
+    if(!r.ok) return null;
+    return await r.json();
+  }catch{ return null; }
+}
+
+// Build 12-month presence calendar from histogram data
+function buildCalendar(histData, location){
+  const months = [1,2,3,4,5,6,7,8,9,10,11,12];
+  if(!histData?.results){
+    return months.map(m=>({month:m, status:'resident'}));
+  }
+  const res = histData.results;
+  // Keys can be string numbers "1"–"12" or ISO date strings
+  const counts = months.map(m=>{
+    const direct = res[m] ?? res[String(m)] ?? 0;
+    if(direct) return direct;
+    // Fallback: sum any key that has this month number
+    return Object.entries(res).reduce((sum,[k,v])=>{
+      const parsed = parseInt(k);
+      return sum + (parsed===m ? v : 0);
+    }, 0);
+  });
+  const maxC = Math.max(...counts, 1);
+  const isNorth = !location || location.lat >= 0;
+  const breeding  = isNorth ? [4,5,6,7,8]    : [10,11,12,1,2];
+  const wintering = isNorth ? [11,12,1,2,3]   : [5,6,7,8,9];
+
+  return months.map((m,i)=>{
+    const ratio = counts[i] / maxC;
+    if(ratio < 0.06) return {month:m, status:'absent'};
+    const prev = counts[(i-1+12)%12] / maxC;
+    const next = counts[(i+1)%12]    / maxC;
+    // Passage migrant: low count flanked by higher months
+    if(ratio < 0.35 && (prev > 0.5 || next > 0.5)) return {month:m, status:'migrating'};
+    if(ratio > 0.45 && breeding.includes(m))  return {month:m, status:'breeding'};
+    if(ratio > 0.30 && wintering.includes(m)) return {month:m, status:'wintering'};
+    return {month:m, status:'resident'};
+  });
+}
+
+// Build status badge array
+function buildBadges(cal, conf, iucn){
+  const badges = [];
+  const statuses = cal.map(c=>c.status);
+  const absentCount = statuses.filter(s=>s==='absent').length;
+  if(absentCount === 0) badges.push('Resident Year-Round');
+  if(statuses.includes('breeding') && absentCount > 3) badges.push('Summer Breeder');
+  if(statuses.includes('wintering') && absentCount > 3) badges.push('Winter Visitor');
+  if(statuses.includes('migrating')) badges.push('Passage Migrant');
+  if(conf >= 80) badges.push('High Confidence');
+  else if(conf >= 55) badges.push('Likely Match');
+  else badges.push('Possible Match');
+  if(iucn && ['EN','CR'].includes(iucn.toUpperCase())) badges.push('Endangered');
+  else if(iucn && iucn.toUpperCase()==='VU') badges.push('Vulnerable');
+  return badges.slice(0,4);
+}
+
+// Current season one-liner
+function seasonSentence(status, name, now){
+  const month = now.toLocaleString('default',{month:'long'});
+  const s = {
+    breeding:  `In ${month} this species is in its breeding season here.`,
+    wintering: `The ${name} is currently overwintering at this location.`,
+    migrating: `${month} is a key passage migration period for the ${name}.`,
+    resident:  `The ${name} is a year-round resident — present here in ${month}.`,
+    absent:    `The ${name} is not typically found at this location in ${month}.`,
+  };
+  return s[status] || `This species may be found in this area.`;
+}
+
+// Migration paragraph
+function migrationText(cal, locName){
+  const loc = locName || 'this area';
+  const absent  = cal.filter(c=>c.status==='absent').length;
+  const mBreed  = cal.filter(c=>c.status==='breeding');
+  const mWinter = cal.filter(c=>c.status==='wintering');
+  const mns     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if(absent === 0) return `Based on iNaturalist observations, this species is present year-round in ${loc}.`;
+  if(mBreed.length && !mWinter.length)
+    return `This species visits ${loc} to breed (approx. ${mns[mBreed[0].month-1]}–${mns[mBreed[mBreed.length-1].month-1]}), then migrates to warmer wintering grounds.`;
+  if(mWinter.length && !mBreed.length)
+    return `This is a winter visitor to ${loc} (approx. ${mns[mWinter[0].month-1]}–${mns[mWinter[mWinter.length-1].month-1]}), having bred elsewhere during summer.`;
+  return `Migration data for ${loc} is based on iNaturalist citizen science records.`;
+}
+
+// Pick the best bird emoji from the taxon name
+function birdEmoji(taxon){
+  const n = (taxon.preferred_common_name||taxon.name||'').toLowerCase();
+  if(/eagle|hawk|falcon|kite|osprey|buzzard|harrier|buteo/.test(n)) return '🦅';
+  if(/owl/.test(n)) return '🦉';
+  if(/duck|teal|mallard|wigeon|pintail|shoveler|pochard/.test(n)) return '🦆';
+  if(/penguin/.test(n)) return '🐧';
+  if(/flamingo/.test(n)) return '🦩';
+  if(/parrot|macaw|cockatoo|parakeet|lorikeet/.test(n)) return '🦜';
+  if(/peacock|peafowl/.test(n)) return '🦚';
+  if(/turkey/.test(n)) return '🦃';
+  if(/swan/.test(n)) return '🦢';
+  if(/dove|pigeon/.test(n)) return '🕊️';
+  if(/crow|raven|magpie|jackdaw/.test(n)) return '🐦‍⬛';
+  if(/heron|egret|bittern/.test(n)) return '🦢';
+  if(/kingfisher/.test(n)) return '🐦';
+  if(/puffin|auk|guillemot/.test(n)) return '🐧';
+  return '🐦';
+}
+
+// Extract a habitat or diet snippet from Wikipedia text
+// ══════════════════════════════════════════════════
+//  WIKIPEDIA DATA EXTRACTION — comprehensive parsers
+// ══════════════════════════════════════════════════
+
+// Build a rich 3-sentence description from Wikipedia
+function buildDescription(text, common, sci){
+  if(!text) return `${common} (${sci}) is a bird species recorded in the iNaturalist global biodiversity database.`;
+  const sentences=text.replace(/\s+/g,' ').split(/(?<=[.!?])\s+/);
+  return sentences.slice(0,3).join(' ').trim();
+}
+
+// Extract habitat — many regex patterns, tries all
+function extractHabitat(text){
+  if(!text) return null;
+  const patterns=[
+    /(?:found|occurs?|lives?|resident|breeds?|inhabits?|nests?|roosts?)\s+(?:in|on|across|throughout|among)\s+([^.]{15,100})/i,
+    /habitat[s]?\s+(?:include[s]?|consist[s]?\s+of|are)\s+([^.]{15,100})/i,
+    /prefer[s]?\s+([^.]{10,80}(?:forest|woodland|grassland|wetland|coast|urban|scrub|heath|meadow|cliff|mountain|desert|savann|marsh|reed|lake|river|ocean|sea|shore)[^.]{0,50})/i,
+    /([^.]{5,60}(?:forest|woodland|grassland|wetland|coastal|urban|scrub|heath|meadow|cliff|mountain|desert|savanna|marsh|reed|lake|river|ocean|seashore)[^.]{5,60})\./i,
+    /open\s+(?:country|grassland|woodland|scrub|fields?|areas?|habitats?)/i,
+    /(?:tropical|temperate|subtropical|arctic|alpine|boreal)\s+(?:forest|woodland|rainforest|scrub|grassland|tundra)/i,
+  ];
+  for(const p of patterns){
+    const m=text.match(p);
+    if(m) return ((m[1]||m[0]).trim().replace(/^[a-z]/,c=>c.toUpperCase())).slice(0,120);
+  }
+  return null;
+}
+
+// Extract diet — comprehensive patterns
+function extractDiet(text){
+  if(!text) return null;
+  const patterns=[
+    /(?:feeds?\s+(?:mainly\s+|primarily\s+|largely\s+|predominantly\s+)?(?:on|upon)|diet\s+(?:consists?\s+of|includes?)|eats?\s+(?:mainly\s+|primarily\s+)?|forages?\s+(?:for|on))\s+([^.]{10,120})/i,
+    /(?:insectivore|omnivore|carnivore|granivore|herbivore|nectarivore|piscivore|frugivore|scavenger)[^.]{0,80}/i,
+    /(?:preys?\s+on|hunts?)\s+([^.]{10,80})/i,
+    /(?:seeds?,?|insects?,?|berries?,?|fish,?|worms?,?|fruits?,?|nectar,?|invertebrates?,?|small\s+mammals?,?|carrion,?|grain,?|nuts?,?|crustaceans?,?)\s+(?:and|are|form)\s+(?:its\s+)?(?:main|primary|staple)\s+(?:food|diet)/i,
+    /(?:its|their)\s+(?:diet|food)\s+(?:consists?\s+of|includes?|is\s+made\s+up\s+of)\s+([^.]{10,100})/i,
+  ];
+  for(const p of patterns){
+    const m=text.match(p);
+    if(m){
+      const val=((m[1]||m[0]).trim()).slice(0,120);
+      return val.replace(/^[a-z]/,c=>c.toUpperCase());
+    }
+  }
+  return null;
+}
+
+// Extract wingspan — many unit formats
+function extractMeasure(text, type){
+  if(!text) return null;
+  const patterns = type==='wingspan' ? [
+    /wingspan\s+(?:of\s+)?(?:about\s+|approximately\s+|up\s+to\s+)?(\d+\.?\d*)\s*(?:to|–|-|and)\s*(\d+\.?\d*)\s*(cm|mm|in)/i,
+    /(?:wing(?:span)?|wings?)\s+(?:measure[sd]?|span[s]?|reach(?:es)?|extend[s]?)\s+(?:up\s+to\s+|about\s+)?(\d+\.?\d*)\s*(?:to|–|-)\s*(\d+\.?\d*)\s*(cm|mm|in)/i,
+    /(\d+\.?\d*)\s*(?:to|–|-)\s*(\d+\.?\d*)\s*(cm|mm|in)\s+(?:wingspan|wing\s+span)/i,
+  ] : [
+    /(?:weigh[st]?|weight|mass)\s+(?:of\s+)?(?:about\s+|approximately\s+|typically\s+|usually\s+)?(\d+\.?\d*)\s*(?:to|–|-)\s*(\d+\.?\d*)\s*(g|kg|lb|oz)/i,
+    /(\d+\.?\d*)\s*(?:to|–|-)\s*(\d+\.?\d*)\s*(g|kg)\s+(?:in\s+)?(?:weight|mass)/i,
+    /(?:adults?|individuals?|birds?)\s+(?:weigh[st]?|range[s]?\s+from)\s+(\d+\.?\d*)\s*(?:to|–|-)\s*(\d+\.?\d*)\s*(g|kg)/i,
+  ];
+  for(const p of patterns){
+    const m=text.match(p);
+    if(m) return `${m[1]}–${m[2]} ${m[3]}`;
+  }
+  return null;
+}
+
+// Pull an interesting fun fact (prefer non-intro sentences)
+function extractFunFact(text, name){
+  if(!text) return `${name} is recorded in the iNaturalist global biodiversity database with verified observations worldwide.`;
+  const clean=text.replace(/\([^)]*\)/g,'').replace(/\[[^\]]*\]/g,'');
+  const sentences=clean.split(/(?<=[.!?])\s+/).map(s=>s.trim()).filter(s=>s.length>45);
+  // Prefer sentences about behaviour, breeding, calls, or notable traits
+  const behavioural=sentences.find((s,i)=>i>0 && /nest|breed|migrat|sing|call|song|court|plumag|winter|summer|flock|display|territ/i.test(s));
+  if(behavioural) return behavioural.slice(0,200);
+  const longer=sentences.find((s,i)=>i>0&&s.length>60)||sentences[sentences.length-1]||sentences[0];
+  return (longer||`${name} is a bird species.`).slice(0,200);
+}
+
+// Extract similar species or confusion species
+function extractSimilar(text, name){
+  if(!text) return null;
+  const m=text.match(/(?:confused?|similar|resemble[sd]?|mistaken?\s+for|distinguish[ed]?\s+from)\s+(?:with\s+)?(?:the\s+)?([^.]{10,100})/i);
+  return m ? m[1].trim().slice(0,120) : null;
+}
+
+// ══════════════════════════════════════════════════
+//  RENDER RESULT
+// ══════════════════════════════════════════════════
+function renderResult(r, monthNum){
+  document.getElementById('r-emoji').textContent = r.emoji||'🐦';
+  document.getElementById('r-common').textContent = r.commonName;
+  document.getElementById('r-latin').textContent = r.scientificName;
+  const pct = Math.min(100, Math.max(0, r.confidence||0));
+  document.getElementById('r-ring').style.background =
+    `conic-gradient(var(--leaf) ${pct}%, rgba(255,255,255,.1) 0)`;
+  document.getElementById('r-pct').textContent = pct+'%';
+
+  const bmap={'resident':'b-res','year-round':'b-res','migrant':'b-mig','summer visitor':'b-mig',
+    'winter visitor':'b-win','breeding':'b-brd','nesting':'b-brd','wintering':'b-win',
+    'passage migrant':'b-pass','rare':'b-rare','uncommon':'b-rare','common':'b-res'};
+  document.getElementById('r-badges').innerHTML=(r.statusBadges||[]).map(b=>{
+    const cls=Object.entries(bmap).find(([k])=>b.toLowerCase().includes(k))?.[1]||'b-res';
+    return `<span class="badge ${cls}">${b}</span>`;
+  }).join('');
+
+  document.getElementById('r-desc').textContent=
+    [r.description,r.currentSeasonStatus,r.migrationInfo].filter(Boolean).join(' ');
+
+  const track=document.getElementById('r-cal'); track.innerHTML='';
+  (r.calendarPresence||[]).forEach(m=>{
+    const c=document.createElement('div');
+    c.className='mc'+(m.status!=='absent'?' '+m.status:'')+(m.month===monthNum?' current':'');
+    c.title=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m.month-1]+': '+m.status;
+    track.appendChild(c);
+  });
+
+  const fields=[{l:'Habitat',v:r.habitat},{l:'Diet',v:r.diet},{l:'Wingspan',v:r.wingspan},
+    {l:'Weight',v:r.weight},{l:'Conservation',v:r.conservationStatus},{l:'Similar To',v:r.similarSpecies}];
+  document.getElementById('r-info').innerHTML=fields.filter(f=>f.v)
+    .map(f=>`<div class="ii"><div class="ii-lbl">${f.l}</div><div class="ii-val">${f.v}</div></div>`).join('');
+
+  const factEl = document.getElementById('r-fact');
+  factEl.innerHTML = `<strong>Did you know?</strong> ${r.funFact||''}`;
+  if(r.iNatUrl){
+    factEl.innerHTML += ` <a href="${r.iNatUrl}" target="_blank" style="color:var(--sage);font-style:normal;font-size:12px;white-space:nowrap">→ View on iNaturalist</a>`;
+  }
+  document.getElementById('res-card').classList.add('on');
+}
+
+// ══════════════════════════════════════════════════
+//  COLOR SWATCHES
+// ══════════════════════════════════════════════════
+function buildSwatches(containerId, onPick){
+  const c=document.getElementById(containerId); if(!c) return;
+  c.innerHTML='';
+  COLORS.forEach((col,i)=>{
+    const s=document.createElement('div');
+    s.className='swatch'+(i===0?' sel':'');
+    s.style.background=col; s.title=CLABELS[i];
+    s.onclick=()=>{ c.querySelectorAll('.swatch').forEach(x=>x.classList.remove('sel')); s.classList.add('sel'); onPick(col); };
+    c.appendChild(s);
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  MAP OPT
+// ══════════════════════════════════════════════════
+function selectMapOpt(el){
+  document.querySelectorAll('#map-opts .map-opt').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+  S.selectedMapOpt=el.dataset.opt;
+}
+
+// ══════════════════════════════════════════════════
+//  CONFIRM & SAVE
+// ══════════════════════════════════════════════════
+function confirmAdd(){
+  if(!S.currentResult) return;
+  const r=S.currentResult;
+  const id=Date.now().toString();
+  const bird={
+    id, emoji:r.emoji||'🐦', commonName:r.commonName, scientificName:r.scientificName,
+    nickname:'', confidence:r.confidence||0,
+    description:r.description, currentSeasonStatus:r.currentSeasonStatus,
+    migrationInfo:r.migrationInfo, statusBadges:r.statusBadges||[],
+    calendarPresence:r.calendarPresence||[], habitat:r.habitat,
+    diet:r.diet, wingspan:r.wingspan, weight:r.weight,
+    conservationStatus:r.conservationStatus, funFact:r.funFact,
+    similarSpecies:r.similarSpecies, imageB64:r.imageB64, imageType:r.imageType,
+    locationName:S.locationName, lat:S.location?.lat, lon:S.location?.lon,
+    habitatLat:r.habitatLat, habitatLon:r.habitatLon,
+    date:new Date().toLocaleDateString(), savedAt:Date.now(),
+    markerColor:S.selectedColor, notes:''
+  };
+
+  if(S.selectedMapOpt!=='none'){
+    const pinLat=S.selectedMapOpt==='habitat'?(r.habitatLat||S.location?.lat):S.location?.lat;
+    const pinLon=S.selectedMapOpt==='habitat'?(r.habitatLon||S.location?.lon):S.location?.lon;
+    if(pinLat&&pinLon){
+      S.markers.push({id:id+'_m', birdId:id, lat:pinLat, lon:pinLon, color:S.selectedColor, type:S.selectedMapOpt});
+      saveMarkers();
+    }
+  }
+
+  S.library.unshift(bird);
+  saveLib();
+  document.getElementById('map-action-panel').classList.remove('on');
+  renderLibrary(); renderSidebar(); updateMapMarkers(); updateSettingsCounts();
+  toast(`✅ ${r.commonName} saved to library!`);
+  S.currentResult=null;
+}
+
+// ══════════════════════════════════════════════════
+//  LIBRARY
+// ══════════════════════════════════════════════════
+function renderLibrary(){
+  const q=(document.getElementById('lib-search')?.value||'').toLowerCase();
+  const filtered=S.library.filter(b=>
+    b.commonName.toLowerCase().includes(q)||
+    b.scientificName.toLowerCase().includes(q)||
+    (b.nickname||'').toLowerCase().includes(q)
+  );
+  document.getElementById('lib-count').textContent=S.library.length+' bird'+(S.library.length!==1?'s':'');
+  const grid=document.getElementById('lib-grid');
+  if(!filtered.length){
+    grid.innerHTML=S.library.length===0
+      ?`<div class="lib-empty"><span class="lib-empty-icon">🦢</span><div class="lib-empty-title">Your library is empty</div><div style="font-size:13px;margin-top:4px;color:var(--muted)">Identify a bird to add it here</div></div>`
+      :`<div class="lib-empty"><span class="lib-empty-icon">🔍</span><div class="lib-empty-title">No matches found</div></div>`;
+    return;
+  }
+  grid.innerHTML=filtered.map(b=>`
+    <div class="lib-card" onclick="openBirdModal('${b.id}')">
+      ${b.imageB64
+        ?`<img class="lib-card-img" src="data:${b.imageType||'image/jpeg'};base64,${b.imageB64}" alt="${esc(b.commonName)}" loading="lazy">`
+        :`<div class="lib-card-ph">${b.emoji}</div>`}
+      <div class="lib-card-body">
+        ${b.nickname?`<div class="lib-card-nick">✨ "${esc(b.nickname)}"</div>`:''}
+        <div class="lib-card-name">${b.emoji} ${esc(b.commonName)}</div>
+        <div class="lib-card-latin">${esc(b.scientificName)}</div>
+        <div class="lib-card-meta">
+          <div class="lib-card-date">${b.date}</div>
+          <div class="lib-card-conf">${b.confidence}%</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderSidebar(){
+  const el=document.getElementById('sidebar-sightings-panel');
+  if(!el) return;
+  if(!S.library.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--muted);font-style:italic;padding:6px 0">No sightings yet.</div>';
+    return;
+  }
+  el.innerHTML=S.library.slice(0,8).map(b=>`
+    <div class="sighting-item" onclick="openBirdModal('${b.id}')">
+      <div class="si-emoji">${b.emoji}</div>
+      <div class="si-info">
+        <div class="si-name">${esc(b.nickname||b.commonName)}</div>
+        <div class="si-meta">${b.date||''}${b.locationName?' · '+b.locationName.split(',')[0]:''}</div>
+      </div>
+      <div style="width:8px;height:8px;border-radius:50%;background:${b.markerColor||'#5a9e6f'};flex-shrink:0;border:1px solid rgba(255,255,255,.35)"></div>
+    </div>
+  `).join('')+(S.library.length>8?`<div style="font-size:11px;color:var(--mint);text-align:center;padding:8px 0;cursor:pointer;border-top:1px solid rgba(142,207,160,.1);margin-top:4px" onclick="switchPage('library')">View all ${S.library.length} →</div>`:'');
+}
+
+// ══════════════════════════════════════════════════
+//  BIRD DETAIL MODAL
+// ══════════════════════════════════════════════════
+function openBirdModal(id){
+  const b=S.library.find(x=>x.id===id); if(!b) return;
+  S.editingId=id;
+  document.getElementById('bm-emoji').textContent=b.emoji;
+  document.getElementById('bm-common').textContent=b.commonName;
+  document.getElementById('bm-latin').textContent=b.scientificName;
+
+  const monthNum=new Date().getMonth()+1;
+  const calHtml=b.calendarPresence?.length?`
+    <div class="season-bar" style="margin-bottom:14px">
+      <div class="sbar-lbl">Annual Presence</div>
+      <div class="month-track">${b.calendarPresence.map(m=>`
+        <div class="mc ${m.status!=='absent'?m.status:''} ${m.month===monthNum?'current':''}"
+             title="${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m.month-1]}: ${m.status}"></div>
+      `).join('')}</div>
+      <div class="mlabels"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div>
+    </div>`:'';
+
+  const infoItems=[
+    {l:'Habitat',v:b.habitat},{l:'Diet',v:b.diet},{l:'Wingspan',v:b.wingspan},
+    {l:'Weight',v:b.weight},{l:'Conservation',v:b.conservationStatus},{l:'Similar To',v:b.similarSpecies},
+    {l:'Location Seen',v:b.locationName},{l:'Date Saved',v:b.date}
+  ];
+  const infoHtml=infoItems.filter(f=>f.v)
+    .map(f=>`<div class="ii"><div class="ii-lbl">${f.l}</div><div class="ii-val">${esc(f.v)}</div></div>`).join('');
+
+  document.getElementById('bird-modal-body').innerHTML=`
+    ${b.imageB64
+      ?`<img class="modal-img" src="data:${b.imageType||'image/jpeg'};base64,${b.imageB64}" alt="${esc(b.commonName)}">`
+      :`<div class="modal-ph">${b.emoji}</div>`}
+    ${b.nickname?`<div style="background:rgba(200,151,42,.1);border:1px solid rgba(200,151,42,.25);border-radius:10px;padding:8px 14px;margin-bottom:14px;font-size:13px;color:var(--amber);font-style:italic">✨ Nickname: "${esc(b.nickname)}"</div>`:''}
+    <div class="badges" style="margin-bottom:12px">${(b.statusBadges||[]).map(x=>`<span class="badge b-res">${esc(x)}</span>`).join('')}</div>
+    <p style="font-size:13px;line-height:1.75;color:#333;margin-bottom:12px">${esc([b.description,b.currentSeasonStatus,b.migrationInfo].filter(Boolean).join(' '))}</p>
+    ${calHtml}
+    <div class="info-grid" style="margin-bottom:14px">${infoHtml}</div>
+    ${b.funFact?`<div class="fun-fact" style="margin-bottom:16px"><strong>Did you know?</strong> ${esc(b.funFact)}</div>`:''}
+    ${b.notes?`<div style="background:rgba(90,158,111,.07);border-left:3px solid var(--sage);border-radius:0 9px 9px 0;padding:11px 13px;font-size:13px;color:#333;margin-bottom:16px;line-height:1.6"><strong>Notes:</strong> ${esc(b.notes)}</div>`:''}
+
+    <hr class="section-divider">
+    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px">✏️ Edit Information</div>
+
+    <div class="edit-field"><label class="edit-label">Common Name</label>
+      <input class="edit-input" id="ed-name" value="${esc(b.commonName)}"></div>
+    <div class="edit-field"><label class="edit-label">Scientific Name</label>
+      <input class="edit-input" id="ed-latin" value="${esc(b.scientificName)}"></div>
+    <div class="edit-field"><label class="edit-label">✨ Nickname (your personal label)</label>
+      <input class="edit-input" id="ed-nick" value="${esc(b.nickname||'')}" placeholder="e.g. Robbie, Garden Visitor…"></div>
+    <div class="edit-field"><label class="edit-label">Habitat</label>
+      <input class="edit-input" id="ed-habitat" value="${esc(b.habitat||'')}"></div>
+    <div class="edit-field"><label class="edit-label">Diet</label>
+      <input class="edit-input" id="ed-diet" value="${esc(b.diet||'')}"></div>
+    <div class="edit-field"><label class="edit-label">Conservation Status</label>
+      <input class="edit-input" id="ed-conservation" value="${esc(b.conservationStatus||'')}"></div>
+    <div class="edit-field"><label class="edit-label">Fun Fact</label>
+      <textarea class="edit-input" id="ed-funfact">${esc(b.funFact||'')}</textarea></div>
+    <div class="edit-field"><label class="edit-label">Personal Notes</label>
+      <textarea class="edit-input" id="ed-notes" placeholder="Your own observations, memories…">${esc(b.notes||'')}</textarea></div>
+    <div class="edit-field"><label class="edit-label">Marker Color</label>
+      <div class="color-swatches" id="modal-swatches"></div></div>
+    <div class="edit-actions">
+      <button class="btn btn-primary" onclick="saveBirdEdits('${id}')" type="button">💾 Save Changes</button>
+      <button class="btn btn-danger" onclick="askDeleteBird('${id}')" type="button">🗑️ Delete Bird</button>
+      <button class="btn btn-secondary" onclick="closeModal()" type="button">Cancel</button>
+    </div>
+  `;
+
+  // Build color swatches in modal
+  const ms=document.getElementById('modal-swatches');
+  COLORS.forEach((col,i)=>{
+    const s=document.createElement('div');
+    s.className='swatch'+(col===b.markerColor?' sel':'');
+    s.style.background=col; s.title=CLABELS[i];
+    s.onclick=()=>{ ms.querySelectorAll('.swatch').forEach(x=>x.classList.remove('sel')); s.classList.add('sel'); };
+    ms.appendChild(s);
+  });
+
+  document.getElementById('bird-modal').classList.add('open');
+}
+
+function closeModal(){
+  document.getElementById('bird-modal').classList.remove('open');
+  S.editingId=null;
+}
+
+function saveBirdEdits(id){
+  const idx=S.library.findIndex(b=>b.id===id); if(idx===-1) return;
+  const selSwatch=document.querySelector('#modal-swatches .swatch.sel');
+  const newColor=selSwatch?selSwatch.style.background:S.library[idx].markerColor;
+  S.library[idx]={
+    ...S.library[idx],
+    commonName:document.getElementById('ed-name').value.trim()||S.library[idx].commonName,
+    scientificName:document.getElementById('ed-latin').value.trim()||S.library[idx].scientificName,
+    nickname:document.getElementById('ed-nick').value.trim(),
+    habitat:document.getElementById('ed-habitat').value.trim(),
+    diet:document.getElementById('ed-diet').value.trim(),
+    conservationStatus:document.getElementById('ed-conservation').value.trim(),
+    funFact:document.getElementById('ed-funfact').value.trim(),
+    notes:document.getElementById('ed-notes').value.trim(),
+    markerColor:newColor,
+  };
+  S.markers.forEach(m=>{ if(m.birdId===id) m.color=newColor; });
+  saveLib(); saveMarkers();
+  closeModal(); renderLibrary(); renderSidebar(); updateMapMarkers();
+  toast('Changes saved ✓');
+}
+
+// ══════════════════════════════════════════════════
+//  CONFIRM DIALOG (replaces browser confirm())
+// ══════════════════════════════════════════════════
+let confirmCallback = null;
+
+function showConfirm({icon='🗑️', title='Are you sure?', msg='This cannot be undone.', yesLabel='Yes, Delete', onYes}){
+  document.getElementById('confirm-icon').textContent=icon;
+  document.getElementById('confirm-title').textContent=title;
+  document.getElementById('confirm-msg').textContent=msg;
+  document.getElementById('confirm-yes').textContent=yesLabel;
+  confirmCallback=onYes;
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+function closeConfirm(){
+  document.getElementById('confirm-overlay').classList.remove('open');
+  confirmCallback=null;
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('confirm-yes').addEventListener('click',()=>{
+    const cb = confirmCallback;   // save BEFORE closeConfirm nulls it
+    closeConfirm();
+    if(cb) cb();
+  });
+  document.getElementById('confirm-overlay').addEventListener('click',e=>{
+    if(e.target===document.getElementById('confirm-overlay')) closeConfirm();
+  });
+  document.getElementById('bird-modal').addEventListener('click',e=>{
+    if(e.target===document.getElementById('bird-modal')) closeModal();
+  });
+});
+
+function askDeleteBird(id){
+  const b=S.library.find(x=>x.id===id);
+  showConfirm({
+    icon:'🗑️',
+    title:'Delete this bird?',
+    msg:`"${b?.commonName||'This bird'}" will be removed from your library and any map markers will also be deleted.`,
+    yesLabel:'Yes, Delete',
+    onYes:()=>deleteBird(id)
+  });
+}
+
+function deleteBird(id){
+  // Step 1 — immediately pull every Leaflet marker belonging to this bird off the map.
+  // We do this BEFORE filtering S.markers so we still have the IDs to look up.
+  if(map){
+    // Direct pin markers
+    S.markers.filter(m=>m.birdId===id).forEach(m=>{
+      const lm=leafletMarkers[m.id];
+      if(lm){ try{ lm.remove(); }catch(e){} delete leafletMarkers[m.id]; }
+      // Fan-out copies
+      const lmf=leafletMarkers[m.id+'_fan'];
+      if(lmf){ try{ lmf.remove(); }catch(e){} delete leafletMarkers[m.id+'_fan']; }
+    });
+    // Cluster circles that contained this bird
+    Object.keys(leafletMarkers).forEach(k=>{
+      if(k.startsWith('cluster_')){
+        try{ leafletMarkers[k].remove(); }catch(e){}
+        delete leafletMarkers[k];
+      }
+    });
+  }
+
+  // Step 2 — update data arrays and persist
+  S.library  = S.library.filter(b=>b.id!==id);
+  S.markers  = S.markers.filter(m=>m.birdId!==id);
+  saveLib(); saveMarkers();
+
+  // Step 3 — close modal and refresh all UI
+  closeModal();
+  renderLibrary();
+  renderSidebar();
+  updateSettingsCounts();
+
+  // Step 4 — if map is live do a clean redraw (repaints any cluster circles we cleared)
+  if(mapInited) updateMapMarkers();
+
+  toast('Bird removed from library');
+}
+
+function askClearMarkers(){
+  showConfirm({
+    icon:'🗺️',
+    title:'Clear all map markers?',
+    msg:'All pins will be removed from the map. Your library birds will be kept.',
+    yesLabel:'Yes, Clear All',
+    onYes:()=>{
+      S.markers=[]; saveMarkers(); updateMapMarkers();
+      toast('All markers cleared');
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  MAP — CartoDB tiles + draggable pins + clustering
+//        + rescue centers + map settings
+// ══════════════════════════════════════════════════
+let map=null, leafletMarkers={}, mapInited=false;
+let rescueLayer=null, habitatLayers=[], rescueLoaded=false;
+let mapSettings={ showNames:false, altSymbol:false, showRescue:false };
+let placeOpt='exact';
+
+function initMap(){
+  if(mapInited){
+    setTimeout(()=>map&&map.invalidateSize(),50);
+    renderRecentSightings();
+    return;
+  }
+  mapInited=true;
+  const worldBounds=L.latLngBounds(L.latLng(-85,-180),L.latLng(85,180));
+  map=L.map('leaflet-map',{
+    center:[30,10],zoom:2,
+    maxBounds:worldBounds,maxBoundsViscosity:1.0,
+    minZoom:2,maxZoom:18,worldCopyJump:false,zoomControl:true,
+  });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains:'abcd',maxZoom:19,noWrap:true,bounds:worldBounds,
+  }).addTo(map);
+  map.on('click',e=>{
+    if(S.placingMarker&&placeOpt==='custom') placeMarkerAt(e.latlng.lat,e.latlng.lng);
+  });
+  setTimeout(()=>map.invalidateSize(),100);
+  updateMapMarkers();
+  renderRecentSightings();
+}
+
+// ── Icon makers ──
+function mkPinIcon(color,label){
+  const showLabel = mapSettings.showNames && label;
+  if(mapSettings.altSymbol){
+    const html=`<div style="display:flex;flex-direction:column;align-items:center">
+      <div style="width:28px;height:28px;background:${color};border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer">✱</div>
+      ${showLabel?`<div style="margin-top:3px;background:rgba(10,26,10,.85);color:#f4efe4;font-size:9px;font-family:'DM Sans',sans-serif;padding:1px 5px;border-radius:4px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>`:''}
+    </div>`;
+    return L.divIcon({className:'bl-pin',html,iconSize:[28,showLabel?46:28],iconAnchor:[14,14],popupAnchor:[0,-16]});
+  }
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">
+    <filter id="sh${color.replace('#','')}"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,.45)"/></filter>
+    <g filter="url(#sh${color.replace('#','')})">
+      <path d="M14 2C8.48 2 4 6.48 4 12c0 7.5 10 22 10 22s10-14.5 10-22c0-5.52-4.48-10-10-10z" fill="${color}" stroke="#fff" stroke-width="2"/>
+      <circle cx="14" cy="12" r="4" fill="#fff" opacity=".85"/>
+    </g>
+  </svg>`;
+  const html=`<div style="display:flex;flex-direction:column;align-items:center">${svg}${showLabel?`<div style="margin-top:2px;background:rgba(10,26,10,.85);color:#f4efe4;font-size:9px;font-family:'DM Sans',sans-serif;padding:1px 5px;border-radius:4px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>`:''}
+  </div>`;
+  const h=showLabel?56:38;
+  return L.divIcon({className:'bl-pin',html,iconSize:[28,h],iconAnchor:[14,38],popupAnchor:[0,-42]});
+}
+
+function mkRescueIcon(){
+  const html=`<div style="width:30px;height:30px;background:#d94444;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.5)">🏥</div>`;
+  return L.divIcon({className:'rescue-icon',html,iconSize:[30,30],iconAnchor:[15,15],popupAnchor:[0,-18]});
+}
+
+// ── Cluster detection ──
+const CLUSTER_THRESHOLD=5, CLUSTER_PX=40;
+function pixelDist(m1,m2){
+  if(!map) return 999;
+  const p1=map.latLngToLayerPoint([m1.lat,m1.lon]);
+  const p2=map.latLngToLayerPoint([m2.lat,m2.lon]);
+  return Math.hypot(p1.x-p2.x,p1.y-p2.y);
+}
+function getClusters(){
+  const visited=new Set(), clusters=[];
+  S.markers.forEach((m,i)=>{
+    if(visited.has(m.id)) return;
+    const group=[m];
+    S.markers.forEach((m2,j)=>{ if(i!==j&&!visited.has(m2.id)&&pixelDist(m,m2)<CLUSTER_PX){ group.push(m2); visited.add(m2.id); } });
+    visited.add(m.id);
+    clusters.push(group);
+  });
+  return clusters;
+}
+
+// ── Main marker render ──
+function updateMapMarkers(){
+  if(!mapInited) return;
+  // Remove all old markers
+  Object.values(leafletMarkers).forEach(m=>{ if(m.remove) m.remove(); });
+  leafletMarkers={};
+  habitatLayers.forEach(l=>l.remove()); habitatLayers=[];
+
+  // Check density warning
+  const dense=S.markers.filter(m=>S.markers.filter(m2=>pixelDist(m,m2)<CLUSTER_PX).length>=CLUSTER_THRESHOLD);
+  if(dense.length>=CLUSTER_THRESHOLD){
+    toast('📍 Many markers in one spot — try zooming in for more detail or adjust placement.');
+  }
+
+  const clusters=getClusters();
+  clusters.forEach(group=>{
+    if(group.length>=CLUSTER_THRESHOLD){
+      renderCluster(group);
+    } else {
+      group.forEach((m,idx)=>{
+        const bird=S.library.find(b=>b.id===m.birdId);
+        const label=bird?.nickname||bird?.commonName||'Bird';
+        const emoji=bird?.emoji||'🐦';
+        // Stagger overlapping markers slightly
+        let lat=m.lat, lon=m.lon;
+        if(group.length>1){ const angle=(idx/group.length)*2*Math.PI; lat+=Math.cos(angle)*0.00005; lon+=Math.sin(angle)*0.00005; }
+        const marker=L.marker([lat,lon],{
+          icon:mkPinIcon(m.color,label),
+          draggable:true,
+          title:label,
+        });
+        marker.on('dragend',e=>{
+          const p=e.target.getLatLng();
+          m.lat=p.lat; m.lon=p.lng;
+          saveMarkers(); renderRecentSightings();
+        });
+        marker.bindPopup(buildPopup(bird,m,emoji),{maxWidth:230});
+        marker.addTo(map);
+        leafletMarkers[m.id]=marker;
+      });
+    }
+  });
+
+  if(mapSettings.showRescue) loadRescueCenters();
+  renderRecentSightings();
+}
+
+function buildPopup(bird,m,emoji){
+  const name=bird?.commonName||'Unknown';
+  const nick=bird?.nickname?`<div class="bp-nick">✨ "${bird.nickname}"</div>`:'';
+  return `<div class="bird-popup">
+    <span style="font-size:26px;float:right;margin-left:8px">${emoji}</span>
+    <div class="bp-name">${name}</div>${nick}
+    <div class="bp-meta">📍 Seen here${bird?.date?' · '+bird.date:''}</div>
+    ${bird?.locationName?`<div class="bp-meta">📍 ${bird.locationName}</div>`:''}
+    <div class="bp-meta" style="margin-top:4px;font-style:italic;font-size:10px">Drag to reposition</div>
+    <button class="bp-btn" onclick="openBirdModal('${m.birdId}')">View Details</button>
+  </div>`;
+}
+
+// ── Cluster rendering: fan-out ring ──
+function renderCluster(group){
+  const center=group[0];
+  const clHtml=`<div style="width:36px;height:36px;background:rgba(90,158,111,.85);border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;box-shadow:0 3px 12px rgba(0,0,0,.5);cursor:pointer">${group.length}</div>`;
+  const cMarker=L.marker([center.lat,center.lon],{
+    icon:L.divIcon({className:'cluster-icon',html:clHtml,iconSize:[36,36],iconAnchor:[18,18]}),
+    zIndexOffset:100,
+  });
+  let expanded=false;
+  const fanMarkers=[];
+  cMarker.on('click',()=>{
+    if(!expanded){
+      expanded=true;
+      group.forEach((m,i)=>{
+        const angle=(i/group.length)*2*Math.PI-Math.PI/2;
+        const r=0.0006;
+        const lat=center.lat+Math.sin(angle)*r;
+        const lon=center.lon+Math.cos(angle)*r;
+        const bird=S.library.find(b=>b.id===m.birdId);
+        const label=bird?.nickname||bird?.commonName||'Bird';
+        const fm=L.marker([lat,lon],{
+          icon:mkPinIcon(m.color,label),draggable:true,
+        });
+        fm.on('dragend',e=>{const p=e.target.getLatLng();m.lat=p.lat;m.lon=p.lng;saveMarkers();});
+        fm.bindPopup(buildPopup(bird,m,bird?.emoji||'🐦'),{maxWidth:230});
+        fm.addTo(map); fanMarkers.push(fm);
+        leafletMarkers[m.id+'_fan']=fm;
+      });
+    } else {
+      expanded=false;
+      fanMarkers.forEach(fm=>{fm.remove();});
+      fanMarkers.length=0;
+    }
+  });
+  cMarker.addTo(map);
+  leafletMarkers['cluster_'+center.lat+'_'+center.lon]=cMarker;
+}
+
+// ── Wildlife rescue centers via Overpass API (OSM) ──
+async function loadRescueCenters(){
+  if(rescueLayer){ rescueLayer.addTo(map); return; }
+  if(rescueLoaded) return;
+  rescueLoaded=true;
+  try{
+    const center=S.location||{lat:51,lon:0};
+    const query=`[out:json][timeout:25];(
+      node["amenity"="veterinary"](around:80000,${center.lat},${center.lon});
+      node["animal_boarding"="yes"](around:80000,${center.lat},${center.lon});
+      node["name"~"wildlife|rescue|rehabilitation|rehab|animal|bird",i](around:80000,${center.lat},${center.lon});
+    );out body;`;
+    const resp=await fetch('https://overpass-api.de/api/interpreter',{
+      method:'POST',body:'data='+encodeURIComponent(query),
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    });
+    if(!resp.ok) throw new Error('Overpass error');
+    const data=await resp.json();
+    rescueLayer=L.layerGroup();
+    (data.elements||[]).slice(0,60).forEach(el=>{
+      const name=el.tags?.name||el.tags?.amenity||'Wildlife Rescue';
+      const m=L.marker([el.lat,el.lon],{icon:mkRescueIcon()});
+      m.bindPopup(`<div class="bird-popup">
+        <div class="bp-name">🏥 ${esc(name)}</div>
+        ${el.tags?.phone?`<div class="bp-meta">📞 ${el.tags.phone}</div>`:''}
+        ${el.tags?.website?`<div class="bp-meta"><a href="${el.tags.website}" target="_blank" style="color:#3d6b4f">Website</a></div>`:''}
+        <div class="bp-meta" style="color:#888">Wildlife Rescue Center (OSM)</div>
+      </div>`,{maxWidth:220});
+      rescueLayer.addLayer(m);
+    });
+    rescueLayer.addTo(map);
+    toast(`🏥 ${(data.elements||[]).length} rescue centers loaded`);
+  }catch(e){
+    toast('Could not load rescue centers: '+e.message);
+    rescueLoaded=false;
+  }
+}
+
+// ── Map settings panel ──
+function toggleMapSettings(){
+  const sh=document.getElementById('map-settings-sheet');
+  sh.classList.toggle('open');
+}
+function applyMapSettings(){
+  mapSettings.showNames  = document.getElementById('tog-names').checked;
+  mapSettings.altSymbol  = document.getElementById('tog-symbol').checked;
+  mapSettings.showRescue = document.getElementById('tog-rescue').checked;
+  if(mapSettings.showRescue){ loadRescueCenters(); }
+  else if(rescueLayer){ rescueLayer.remove(); }
+  habitatLayers.forEach(l=>l.remove()); habitatLayers=[];
+  updateMapMarkers();
+}
+
+// ── Recent sightings panel ──
+function renderRecentSightings(){
+  // Recent sightings now live in the permanent sidebar panel
+  renderSidebar();
+}
+function flyToMarker(birdId){
+  if(!map) return;
+  const m=S.markers.find(x=>x.birdId===birdId);
+  if(m) map.flyTo([m.lat,m.lon],13,{duration:1});
+}
+
+function goToMyLocation(){
+  if(S.location&&map) map.flyTo([S.location.lat,S.location.lon],13,{duration:1.2});
+  else toast('Location not available');
+}
+
+// ── Add marker sheet ──
+function openAddMarker(){
+  const sel=document.getElementById('amm-bird-select');
+  sel.innerHTML='<option value="">— Select a bird —</option>';
+  S.library.forEach(b=>{
+    const opt=document.createElement('option');
+    opt.value=b.id; opt.textContent=`${b.emoji} ${b.nickname||b.commonName}`;
+    sel.appendChild(opt);
+  });
+  document.getElementById('amm').classList.add('open');
+}
+function closeAddMarker(){
+  document.getElementById('amm').classList.remove('open');
+  S.placingMarker=false; S.ammBirdId=null;
+  if(map) map.getContainer().style.cursor='';
+}
+function selectPlaceOpt(el){
+  document.querySelectorAll('#amm-place-opts .map-opt').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+  placeOpt=el.dataset.place;
+}
+function startPlacingMarker(){
+  const birdId=document.getElementById('amm-bird-select').value;
+  if(!birdId){ toast('Please select a bird first'); return; }
+  S.ammBirdId=birdId;
+  closeAddMarker();
+  if(placeOpt==='exact'||placeOpt==='nudge'){
+    if(!S.location){ toast('Location not available — choose "Custom" instead'); return; }
+    let lat=S.location.lat, lon=S.location.lon;
+    if(placeOpt==='nudge'){
+      // Nudge 50m northeast to avoid exact overlap
+      lat+=0.00045; lon+=0.00045;
+    }
+    placeMarkerAt(lat,lon);
+  } else {
+    S.placingMarker=true;
+    if(map) map.getContainer().style.cursor='crosshair';
+    toast('Click anywhere on the map to place the pin');
+  }
+}
+function placeMarkerAt(lat,lon){
+  S.placingMarker=false;
+  if(map) map.getContainer().style.cursor='';
+  const near=S.markers.filter(m=>pixelDist(m,{lat,lon})<CLUSTER_PX).length;
+  if(near>=CLUSTER_THRESHOLD-1) toast('⚠️ Too many markers here — consider zooming in or placing elsewhere.');
+  S.markers.push({id:Date.now()+'_m',birdId:S.ammBirdId,lat,lon,color:S.ammColor,type:'sighting'});
+  saveMarkers(); updateMapMarkers();
+  const bird=S.library.find(b=>b.id===S.ammBirdId);
+  toast(`📍 ${bird?.commonName||'Bird'} pinned!`);
+  S.ammBirdId=null;
+  if(map) map.flyTo([lat,lon],13,{duration:1});
+}
+
+function askClearMarkers(){
+  showConfirm({
+    icon:'🗺️',title:'Clear all map markers?',
+    msg:'All pins will be removed from the map. Your library birds will be kept.',
+    yesLabel:'Yes, Clear All',
+    onYes:()=>{ S.markers=[]; saveMarkers(); updateMapMarkers(); toast('All markers cleared'); }
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  PROFILE / AVATAR
+// ══════════════════════════════════════════════════
+function openAvatarPicker(){ document.getElementById('avatar-picker-sheet').classList.add('open'); }
+function closeAvatarPicker(){ document.getElementById('avatar-picker-sheet').classList.remove('open'); }
+function avatarFromGallery(){ closeAvatarPicker(); document.getElementById('avatar-file-inp').click(); }
+function avatarFromCamera(){ closeAvatarPicker(); document.getElementById('avatar-cam-inp').click(); }
+function removeAvatar(){
+  closeAvatarPicker();
+  if(!currentUser) return;
+  lsSet(userKey(currentUser.id,'avatar'),'');
+  document.getElementById('profile-avatar-img').style.display='none';
+  document.getElementById('profile-avatar-emoji').style.display='';
+  document.getElementById('user-avatar-top').textContent='👤';
+  toast('Profile photo removed');
+}
+function handleAvatarFile(e){
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const data=ev.target.result;
+    if(currentUser) lsSet(userKey(currentUser.id,'avatar'),data);
+    applyAvatar(data);
+    toast('Profile photo updated ✓');
+  };
+  reader.readAsDataURL(f);
+  e.target.value='';
+}
+function applyAvatar(dataUrl){
+  const img=document.getElementById('profile-avatar-img');
+  const emoji=document.getElementById('profile-avatar-emoji');
+  const top=document.getElementById('user-avatar-top');
+  if(dataUrl){
+    img.src=dataUrl; img.style.display='block'; emoji.style.display='none';
+    top.innerHTML=`<img src="${dataUrl}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`;
+  } else {
+    img.style.display='none'; emoji.style.display=''; top.textContent='👤';
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════════
+function savePref(){
+  S.prefs.autoMap=document.getElementById('set-auto-map').value;
+  savePrefs(); toast('Preference saved');
+}
+function updateSettingsCounts(){
+  const sl=document.getElementById('set-lib-size');
+  const sm=document.getElementById('set-marker-count');
+  if(sl) sl.textContent=S.library.length;
+  if(sm) sm.textContent=S.markers.length;
+}
+
+// ══════════════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════════════
+function setLoading(on){
+  const b=document.getElementById('id-btn');
+  b.classList.toggle('loading',on); b.disabled=on;
+}
+function showErr(m){
+  const e=document.getElementById('err-card');
+  e.textContent=m; e.classList.add('on');
+  e.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function clearErr(){ document.getElementById('err-card').classList.remove('on'); }
+function hideResult(){
+  document.getElementById('res-card').classList.remove('on');
+  document.getElementById('map-action-panel').classList.remove('on');
+  S.currentResult=null;
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toast(msg){
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),2600);
+}
+</script>
+</body>
+</html>
