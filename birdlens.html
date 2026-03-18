@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>BirdLens — AI Bird Identification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --forest:#0f1f0f;--moss:#1e3a1e;--sage:#3d6b4f;--leaf:#5a9e6f;
+  --mint:#8ecfa0;--cream:#f4efe4;--bark:#7a5c38;
+  --sky:#a8ccd8;--dusk:#6699aa;--gold:#c8972a;--amber:#a07020;
+  --text:#111;--muted:#6a6a58;--card:#ffffffee;
+  --blur:blur(18px);--shadow:0 8px 40px rgba(15,31,15,.22);
+  --r:18px;--t:.32s cubic-bezier(.4,0,.2,1);--nav-h:68px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--forest);color:var(--text);height:100vh;overflow:hidden}
+
+/* ── Background ── */
+.bg{position:fixed;inset:0;z-index:0;
+  background:radial-gradient(ellipse 70% 60% at 15% 0%,#243d28 0%,transparent 55%),
+             radial-gradient(ellipse 50% 70% at 85% 100%,#152535 0%,transparent 55%),
+             linear-gradient(160deg,#0f1f0f 0%,#0a1a0a 100%)}
+.leaf-float{position:fixed;pointer-events:none;z-index:1;opacity:0;animation:leaffall linear infinite}
+@keyframes leaffall{0%{transform:translateY(-30px) rotate(0deg);opacity:0}8%{opacity:.5}90%{opacity:.2}100%{transform:translateY(105vh) rotate(400deg);opacity:0}}
+
+/* ════════════════════════════════════════
+   AUTH SCREEN
+════════════════════════════════════════ */
+#auth-screen{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(ellipse 70% 60% at 15% 0%,#243d28 0%,transparent 55%),radial-gradient(ellipse 50% 70% at 85% 100%,#152535 0%,transparent 55%),linear-gradient(160deg,#0f1f0f,#0a1a0a)}
+#auth-screen.hidden{display:none}
+.auth-box{background:rgba(255,255,255,.05);backdrop-filter:var(--blur);border:1px solid rgba(142,207,160,.18);border-radius:28px;padding:40px 36px;width:100%;max-width:420px;text-align:center;animation:popIn .4s cubic-bezier(.4,0,.2,1)}
+@keyframes popIn{from{opacity:0;transform:scale(.94) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.auth-logo{font-size:52px;margin-bottom:10px}
+.auth-brand{font-family:'Playfair Display',serif;font-size:30px;color:var(--cream);font-weight:700;margin-bottom:4px}
+.auth-brand span{color:var(--leaf)}
+.auth-tagline{font-size:13px;color:var(--mint);margin-bottom:32px;line-height:1.5}
+.auth-tabs{display:flex;gap:0;background:rgba(255,255,255,.06);border-radius:12px;padding:4px;margin-bottom:24px}
+.auth-tab{flex:1;padding:10px;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:var(--t);background:transparent;color:var(--mint)}
+.auth-tab.active{background:linear-gradient(135deg,var(--sage),var(--leaf));color:#fff;box-shadow:0 3px 12px rgba(90,158,111,.4)}
+.auth-form{display:none;animation:fadeSlide .3s ease}
+.auth-form.active{display:block}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.auth-field{margin-bottom:14px;text-align:left}
+.auth-label{font-size:11px;color:var(--mint);font-family:'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;display:block;margin-bottom:5px}
+.auth-input{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(142,207,160,.2);border-radius:10px;padding:12px 14px;color:var(--cream);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:var(--t)}
+.auth-input:focus{border-color:var(--leaf);background:rgba(255,255,255,.1)}
+.auth-input::placeholder{color:rgba(255,255,255,.25)}
+.auth-btn{width:100%;padding:14px;background:linear-gradient(135deg,var(--sage),var(--leaf));border:none;border-radius:12px;font-family:'Playfair Display',serif;font-size:17px;color:#fff;cursor:pointer;transition:var(--t);box-shadow:0 5px 20px rgba(90,158,111,.4);margin-top:6px}
+.auth-btn:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(90,158,111,.5)}
+.auth-err{background:rgba(180,50,50,.15);border:1px solid rgba(180,50,50,.3);border-radius:9px;padding:10px 13px;color:#e07070;font-size:12px;margin-bottom:12px;display:none;text-align:left}
+.auth-err.on{display:block}
+.auth-note{font-size:11px;color:var(--muted);margin-top:18px;line-height:1.5}
+
+/* ════════════════════════════════════════
+   MAIN APP
+════════════════════════════════════════ */
+#app{position:relative;z-index:2;display:flex;flex-direction:column;height:100vh}
+#app.hidden{display:none}
+
+/* Desktop layout */
+@media(min-width:960px){
+  #app{flex-direction:row;flex-wrap:wrap}
+  .topbar{width:100%;flex-shrink:0;order:-1}
+  .sidebar{width:300px;height:calc(100vh - 56px);overflow-y:auto;flex-shrink:0;border-right:1px solid rgba(142,207,160,.12);order:1}
+  .page-host{flex:1;height:calc(100vh - 56px);overflow-y:auto;order:2}
+  .bottomnav{display:none}
+}
+
+/* ── Topbar ── */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;background:rgba(10,26,10,.93);backdrop-filter:var(--blur);border-bottom:1px solid rgba(142,207,160,.1);flex-shrink:0;position:sticky;top:0;z-index:50;gap:8px}
+.logo{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--sage),var(--leaf));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 10px rgba(90,158,111,.4)}
+.logo-text{font-family:'Playfair Display',serif;font-size:19px;color:var(--cream);font-weight:700}
+.logo-text span{color:var(--leaf)}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.loc-pill{display:flex;align-items:center;gap:5px;background:rgba(142,207,160,.08);border:1px solid rgba(142,207,160,.18);border-radius:18px;padding:5px 10px;font-size:11px;color:var(--mint);font-family:'DM Mono',monospace;cursor:pointer;transition:var(--t);max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.loc-pill:hover{background:rgba(142,207,160,.16)}
+.loc-dot{width:5px;height:5px;background:var(--leaf);border-radius:50%;animation:pulse 2s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
+.user-pill{display:flex;align-items:center;gap:6px;background:rgba(200,151,42,.09);border:1px solid rgba(200,151,42,.22);border-radius:18px;padding:5px 10px;font-size:11px;color:var(--gold);cursor:pointer;transition:var(--t);font-family:'DM Mono',monospace}
+.user-pill:hover{background:rgba(200,151,42,.17)}
+
+/* ── Pages ── */
+.page-host{flex:1;overflow-y:auto;padding-bottom:calc(var(--nav-h)+8px)}
+@media(min-width:960px){.page-host{padding-bottom:20px}}
+.page-section{display:none}
+.page-section.active,.map-page.active{display:block}
+.page-inner{padding:18px 18px 10px}
+@media(min-width:960px){.page-inner{padding:26px 30px 20px}}
+
+/* ── Bottom Nav ── */
+.bottomnav{position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;justify-content:space-around;align-items:center;background:rgba(10,26,10,.96);backdrop-filter:var(--blur);border-top:1px solid rgba(142,207,160,.12);height:var(--nav-h);padding-bottom:env(safe-area-inset-bottom)}
+.nav-btn{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:var(--muted);cursor:pointer;transition:var(--t);padding:6px 18px;border-radius:12px;border:none;background:none}
+.nav-btn.active{color:var(--leaf)}
+.nav-btn:hover{color:var(--mint)}
+.nav-icon{font-size:22px;line-height:1}
+
+/* ── Sidebar ── */
+.sidebar{padding:18px 16px;background:rgba(10,26,10,.5);overflow-y:auto}
+.sidebar-title{font-family:'Playfair Display',serif;font-size:16px;color:var(--cream);margin-bottom:12px;font-weight:700}
+.sbar-section{margin-bottom:22px}
+.sighting-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid rgba(142,207,160,.09);margin-bottom:7px;cursor:pointer;transition:var(--t)}
+.sighting-item:hover{background:rgba(255,255,255,.08);border-color:rgba(142,207,160,.22)}
+.si-emoji{font-size:24px}
+.si-info{flex:1;min-width:0}
+.si-name{font-size:12px;color:var(--cream);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si-meta{font-size:10px;color:var(--muted)}
+.si-conf{font-size:10px;color:var(--leaf);font-family:'DM Mono',monospace}
+
+/* ── Section label ── */
+.slabel{font-size:10px;font-family:'DM Mono',monospace;color:var(--mint);letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.slabel::after{content:'';flex:1;height:1px;background:rgba(142,207,160,.18)}
+
+/* ── Upload zone ── */
+.upload-zone{border:2px dashed rgba(142,207,160,.28);border-radius:var(--r);padding:32px 20px;text-align:center;cursor:pointer;transition:var(--t);background:rgba(255,255,255,.02);position:relative;overflow:hidden;margin-bottom:16px}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--leaf);background:rgba(90,158,111,.07);transform:translateY(-2px)}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.uz-icon{font-size:44px;display:block;margin-bottom:10px}
+.uz-title{font-family:'Playfair Display',serif;font-size:18px;color:var(--cream);margin-bottom:5px}
+.uz-sub{font-size:12px;color:var(--mint);line-height:1.5}
+.uz-btns{display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap;position:relative;z-index:1}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:40px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:var(--t);white-space:nowrap}
+.btn-primary{background:linear-gradient(135deg,var(--sage),var(--leaf));color:#fff;box-shadow:0 4px 18px rgba(90,158,111,.4)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(90,158,111,.5)}
+.btn-secondary{background:rgba(255,255,255,.07);color:var(--mint);border:1px solid rgba(142,207,160,.2)}
+.btn-secondary:hover{background:rgba(255,255,255,.13)}
+.btn-gold{background:linear-gradient(135deg,var(--amber),var(--gold));color:#fff;box-shadow:0 4px 18px rgba(160,112,32,.4)}
+.btn-gold:hover{transform:translateY(-2px)}
+.btn-danger{background:rgba(180,50,50,.15);color:#e07070;border:1px solid rgba(180,50,50,.3)}
+.btn-danger:hover{background:rgba(180,50,50,.28)}
+.btn-danger-solid{background:rgba(180,50,50,.85);color:#fff;border:1px solid rgba(180,50,50,.6)}
+.btn-danger-solid:hover{background:rgba(200,50,50,.95)}
+.btn-sm{padding:6px 13px;font-size:12px}
+
+/* ── Preview ── */
+.preview-wrap{position:relative;border-radius:var(--r);overflow:hidden;margin-bottom:16px;display:none;box-shadow:var(--shadow)}
+.preview-wrap.on{display:block}
+.preview-img{width:100%;max-height:280px;object-fit:cover;display:block}
+.preview-ovl{position:absolute;inset:0;background:linear-gradient(to top,rgba(10,26,10,.7) 0%,transparent 50%);pointer-events:none}
+.preview-badge{position:absolute;top:10px;right:10px;background:rgba(10,26,10,.7);backdrop-filter:var(--blur);border:1px solid rgba(142,207,160,.2);border-radius:16px;padding:5px 11px;font-size:10px;color:var(--mint);font-family:'DM Mono',monospace}
+.preview-rm{position:absolute;top:10px;left:10px;width:28px;height:28px;background:rgba(180,50,50,.7);border:none;border-radius:50%;color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--t);z-index:2}
+.preview-rm:hover{background:rgba(200,50,50,.9);transform:scale(1.1)}
+
+/* ── Context cards ── */
+.ctx-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.ctx-card{background:rgba(255,255,255,.04);border:1px solid rgba(142,207,160,.13);border-radius:13px;padding:12px 14px}
+.ctx-lbl{font-size:10px;color:var(--mint);font-family:'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;margin-bottom:5px}
+.ctx-val{font-size:13px;color:var(--cream);font-weight:500}
+.ctx-val.dim{color:var(--muted);font-style:italic;font-size:11px}
+
+/* ── Identify button ── */
+.id-btn{width:100%;padding:16px;background:linear-gradient(135deg,var(--sage) 0%,var(--leaf) 60%,#7dc48d 100%);border:none;border-radius:var(--r);font-family:'Playfair Display',serif;font-size:18px;color:#fff;cursor:pointer;transition:var(--t);box-shadow:0 6px 28px rgba(90,158,111,.45);margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:10px;position:relative;overflow:hidden}
+.id-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent,rgba(255,255,255,.15),transparent);transform:translateX(-100%);transition:transform .6s ease}
+.id-btn:hover::before{transform:translateX(100%)}
+.id-btn:hover:not(:disabled){transform:translateY(-3px);box-shadow:0 10px 36px rgba(90,158,111,.55)}
+.id-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.spinner{width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:none}
+.id-btn.loading .spinner{display:block}
+.id-btn.loading .id-txt{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Error card ── */
+.err-card{background:rgba(180,50,50,.1);border:1px solid rgba(180,50,50,.3);border-radius:var(--r);padding:16px 18px;color:#e07070;font-size:13px;display:none;margin-bottom:16px;line-height:1.6}
+.err-card.on{display:block}
+
+/* ── API banner ── */
+.api-banner{background:rgba(200,151,42,.1);border:1px solid rgba(200,151,42,.28);border-radius:13px;padding:14px 16px;font-size:13px;color:var(--gold);line-height:1.6;margin-bottom:16px}
+.api-row{display:flex;gap:8px;margin-top:9px}
+.api-inp{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(200,151,42,.28);border-radius:9px;padding:9px 12px;color:var(--cream);font-size:12px;font-family:'DM Mono',monospace;outline:none}
+.api-inp:focus{border-color:var(--gold)}
+.api-inp::placeholder{color:rgba(255,255,255,.22)}
+
+/* ── Result card ── */
+.res-card{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-bottom:18px;display:none;animation:slideUp .45s cubic-bezier(.4,0,.2,1)}
+.res-card.on{display:block}
+@keyframes slideUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+.res-head{background:linear-gradient(135deg,var(--forest),var(--moss));padding:20px 22px;display:flex;align-items:flex-start;gap:14px}
+.res-emoji{font-size:48px;filter:drop-shadow(0 3px 8px rgba(0,0,0,.3))}
+.res-title{flex:1}
+.res-common{font-family:'Playfair Display',serif;font-size:24px;color:var(--cream);line-height:1.2}
+.res-latin{font-size:12px;color:var(--mint);font-style:italic;margin-top:3px}
+.conf-ring{width:52px;height:52px;border-radius:50%;background:conic-gradient(var(--leaf) var(--pct,0%),rgba(255,255,255,.1) 0);display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0}
+.conf-ring::before{content:'';position:absolute;width:38px;height:38px;background:var(--forest);border-radius:50%}
+.conf-pct{position:relative;z-index:1;font-size:10px;font-weight:700;color:var(--leaf);font-family:'DM Mono',monospace}
+.res-body{padding:18px 20px}
+.badges{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:18px;font-size:11px;font-weight:500;border:1px solid}
+.b-res{background:rgba(90,158,111,.13);border-color:rgba(90,158,111,.38);color:var(--leaf)}
+.b-mig{background:rgba(102,153,170,.13);border-color:rgba(102,153,170,.38);color:var(--dusk)}
+.b-brd{background:rgba(200,151,42,.13);border-color:rgba(200,151,42,.38);color:var(--gold)}
+.b-win{background:rgba(122,92,56,.13);border-color:rgba(122,92,56,.38);color:var(--bark)}
+.b-rare{background:rgba(180,50,50,.13);border-color:rgba(180,50,50,.38);color:#e07070}
+.b-pass{background:rgba(142,207,160,.13);border-color:rgba(142,207,160,.38);color:var(--mint)}
+.res-desc{font-size:13px;line-height:1.75;color:#2a2a20;margin-bottom:14px}
+.season-bar{margin-bottom:14px}
+.sbar-lbl{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}
+.month-track{display:flex;gap:2px}
+.mc{flex:1;height:22px;border-radius:3px;background:#e0ddd5;position:relative;cursor:default;transition:var(--t)}
+.mc:hover{transform:scaleY(1.3)}
+.mc.breeding{background:linear-gradient(to top,var(--gold),#f0d060)}
+.mc.wintering{background:linear-gradient(to top,var(--bark),#b89060)}
+.mc.migrating{background:linear-gradient(to top,var(--dusk),var(--sky))}
+.mc.resident{background:linear-gradient(to top,var(--sage),var(--leaf))}
+.mc.current::after{content:'▼';position:absolute;top:-14px;left:50%;transform:translateX(-50%);font-size:9px;color:#444}
+.mlabels{display:flex;margin-top:3px}
+.mlabels span{flex:1;text-align:center;font-size:9px;color:var(--muted);font-family:'DM Mono',monospace}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.ii{background:rgba(26,46,26,.06);border-radius:9px;padding:9px 11px}
+.ii-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace}
+.ii-val{font-size:12px;color:var(--text);font-weight:600;margin-top:2px}
+.fun-fact{background:linear-gradient(135deg,rgba(26,46,26,.07),rgba(61,107,79,.07));border-left:3px solid var(--leaf);border-radius:0 9px 9px 0;padding:11px 13px;font-size:13px;color:#333;line-height:1.65;font-style:italic;margin-bottom:14px}
+.fun-fact strong{color:var(--sage);font-style:normal}
+
+/* ── Map action panel ── */
+.map-action-panel{background:rgba(142,207,160,.07);border:1px solid rgba(142,207,160,.2);border-radius:var(--r);padding:18px 20px;margin-bottom:18px;display:none}
+.map-action-panel.on{display:block}
+.map-action-title{font-family:'Playfair Display',serif;font-size:16px;color:var(--cream);margin-bottom:4px}
+.map-action-sub{font-size:12px;color:var(--mint);margin-bottom:14px;line-height:1.5}
+.map-opts{display:flex;flex-direction:column;gap:9px}
+.map-opt{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.05);border:1px solid rgba(142,207,160,.15);border-radius:11px;padding:12px 14px;cursor:pointer;transition:var(--t)}
+.map-opt:hover{background:rgba(142,207,160,.1);border-color:rgba(142,207,160,.3)}
+.map-opt.selected{background:rgba(90,158,111,.18);border-color:var(--leaf)}
+.map-opt-icon{font-size:22px;flex-shrink:0}
+.map-opt-info{flex:1}
+.map-opt-title{font-size:13px;color:var(--cream);font-weight:600}
+.map-opt-desc{font-size:11px;color:var(--mint);margin-top:1px}
+.map-opt-radio{width:16px;height:16px;border-radius:50%;border:2px solid rgba(142,207,160,.4);flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.map-opt.selected .map-opt-radio{border-color:var(--leaf)}
+.map-opt.selected .map-opt-radio::after{content:'';width:8px;height:8px;background:var(--leaf);border-radius:50%;display:block}
+.color-picker-row{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.color-picker-label{font-size:12px;color:var(--mint);font-family:'DM Mono',monospace}
+.color-swatches{display:flex;gap:7px;flex-wrap:wrap}
+.swatch{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:var(--t);flex-shrink:0}
+.swatch:hover{transform:scale(1.15)}
+.swatch.sel{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.5)}
+
+/* ════════════════════════════════════════
+   LIBRARY
+════════════════════════════════════════ */
+.lib-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.lib-title{font-family:'Playfair Display',serif;font-size:24px;color:var(--cream)}
+.lib-count{font-size:11px;color:var(--mint);font-family:'DM Mono',monospace;background:rgba(142,207,160,.12);padding:4px 10px;border-radius:12px}
+.lib-search{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(142,207,160,.18);border-radius:11px;padding:10px 14px;color:var(--cream);font-size:13px;outline:none;margin-bottom:16px;font-family:'DM Sans',sans-serif}
+.lib-search::placeholder{color:var(--muted)}
+.lib-search:focus{border-color:var(--leaf)}
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+@media(min-width:960px){.lib-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}}
+.lib-card{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.12);cursor:pointer;transition:var(--t);animation:fadeIn .4s ease}
+.lib-card:hover{transform:translateY(-4px);box-shadow:0 10px 32px rgba(0,0,0,.18)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.lib-card-img{width:100%;height:140px;object-fit:cover;display:block}
+.lib-card-ph{width:100%;height:140px;background:linear-gradient(135deg,var(--moss),var(--forest));display:flex;align-items:center;justify-content:center;font-size:52px}
+.lib-card-body{padding:12px 14px}
+.lib-card-nick{font-size:10px;color:var(--gold);font-family:'DM Mono',monospace;letter-spacing:.07em;text-transform:uppercase;margin-bottom:2px}
+.lib-card-name{font-family:'Playfair Display',serif;font-size:15px;color:var(--text);font-weight:700;line-height:1.2}
+.lib-card-latin{font-size:11px;color:var(--muted);font-style:italic;margin-top:2px}
+.lib-card-meta{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.lib-card-date{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace}
+.lib-card-conf{font-size:10px;color:var(--leaf);font-family:'DM Mono',monospace;background:rgba(90,158,111,.12);padding:2px 7px;border-radius:8px}
+.lib-empty{text-align:center;padding:50px 20px;color:var(--muted);grid-column:1/-1}
+.lib-empty-icon{font-size:52px;display:block;margin-bottom:12px}
+.lib-empty-title{font-family:'Playfair Display',serif;font-size:20px;color:var(--cream);margin-bottom:6px}
+
+/* ════════════════════════════════════════
+   MODALS
+════════════════════════════════════════ */
+.modal-overlay{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:22px;width:100%;max-width:580px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);animation:popIn .3s cubic-bezier(.4,0,.2,1);margin:auto}
+.modal-head{background:linear-gradient(135deg,var(--forest),var(--moss));padding:20px 22px;display:flex;align-items:flex-start;gap:14px;position:relative}
+.modal-close-btn{position:absolute;top:14px;right:14px;width:30px;height:30px;background:rgba(255,255,255,.1);border:none;border-radius:50%;color:var(--cream);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--t)}
+.modal-close-btn:hover{background:rgba(255,255,255,.2)}
+.modal-body{padding:22px}
+.modal-img{width:100%;max-height:260px;object-fit:cover;border-radius:13px;margin-bottom:18px;display:block}
+.modal-ph{width:100%;height:180px;background:linear-gradient(135deg,var(--moss),var(--forest));border-radius:13px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;font-size:70px}
+.edit-field{margin-bottom:14px}
+.edit-label{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.07em;text-transform:uppercase;margin-bottom:5px;display:block}
+.edit-input{width:100%;background:#f8f6f0;border:1px solid #ddd;border-radius:9px;padding:10px 13px;font-size:13px;color:var(--text);outline:none;font-family:'DM Sans',sans-serif;transition:var(--t)}
+.edit-input:focus{border-color:var(--leaf);background:#fff}
+textarea.edit-input{resize:vertical;min-height:80px;line-height:1.55}
+.edit-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.section-divider{border:none;border-top:1px solid #eee;margin:16px 0}
+
+/* ── Confirm/Delete dialog ── */
+.confirm-overlay{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;padding:20px}
+.confirm-overlay.open{display:flex}
+.confirm-box{background:#fff;border-radius:20px;padding:32px 28px;max-width:380px;width:100%;text-align:center;animation:popIn .28s cubic-bezier(.4,0,.2,1);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.confirm-icon{font-size:44px;margin-bottom:12px}
+.confirm-title{font-family:'Playfair Display',serif;font-size:20px;color:#1a1a16;margin-bottom:8px}
+.confirm-msg{font-size:13px;color:#666;line-height:1.6;margin-bottom:24px}
+.confirm-btns{display:flex;gap:10px;justify-content:center}
+
+/* ════════════════════════════════════════
+   MAP PAGE
+════════════════════════════════════════ */
+.map-page{display:none;height:calc(100vh - 56px - var(--nav-h));position:relative;flex-direction:column}
+.map-page.active{display:flex}
+@media(min-width:960px){.map-page{height:calc(100vh - 56px)}}
+#leaflet-map{flex:1;z-index:1;min-height:0}
+.map-toolbar{position:absolute;top:12px;right:12px;z-index:10;display:flex;flex-direction:column;gap:8px}
+.map-tool-btn{width:38px;height:38px;background:rgba(10,26,10,.88);backdrop-filter:var(--blur);border:1px solid rgba(142,207,160,.22);border-radius:10px;color:var(--mint);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--t)}
+.map-tool-btn:hover{background:rgba(90,158,111,.3);color:var(--leaf)}
+.map-legend{position:absolute;bottom:16px;left:12px;z-index:10;background:rgba(10,26,10,.9);backdrop-filter:var(--blur);border:1px solid rgba(142,207,160,.18);border-radius:13px;padding:12px 14px;min-width:150px;max-width:200px}
+.map-legend-title{font-size:10px;color:var(--mint);font-family:'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;margin-bottom:9px}
+.map-legend-item{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--cream);margin-bottom:5px;cursor:pointer;transition:var(--t)}
+.map-legend-item:hover{color:var(--mint)}
+.map-legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.add-marker-sheet{position:absolute;bottom:0;left:0;right:0;z-index:20;background:rgba(10,26,10,.97);backdrop-filter:var(--blur);border-radius:22px 22px 0 0;padding:22px 20px;border-top:1px solid rgba(142,207,160,.18);transform:translateY(100%);transition:transform .4s cubic-bezier(.4,0,.2,1)}
+.add-marker-sheet.open{transform:translateY(0)}
+.amm-title{font-family:'Playfair Display',serif;font-size:18px;color:var(--cream);margin-bottom:4px}
+.amm-sub{font-size:12px;color:var(--mint);margin-bottom:14px}
+.amm-select{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(142,207,160,.2);border-radius:10px;padding:10px 13px;color:var(--cream);font-size:13px;outline:none;margin-bottom:12px;font-family:'DM Sans',sans-serif;appearance:none}
+.amm-select option{background:#1e3a1e;color:var(--cream)}
+.amm-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+.amm-close:hover{color:var(--cream)}
+.bird-popup{font-family:'DM Sans',sans-serif;min-width:155px}
+.bp-name{font-family:'Playfair Display',serif;font-size:14px;color:#1a1a16;font-weight:700}
+.bp-nick{font-size:11px;color:var(--amber);font-style:italic;margin-top:1px}
+.bp-meta{font-size:11px;color:#888;margin-top:4px}
+.bp-btn{margin-top:8px;padding:5px 12px;background:var(--sage);color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;width:100%}
+
+/* ── Settings ── */
+.settings-section{background:rgba(255,255,255,.04);border:1px solid rgba(142,207,160,.13);border-radius:var(--r);padding:16px 18px;margin-bottom:14px}
+.settings-title{font-family:'Playfair Display',serif;font-size:17px;color:var(--cream);margin-bottom:12px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(142,207,160,.08);gap:12px}
+.setting-row:last-child{border:none}
+.setting-label{font-size:13px;color:var(--cream);flex:1}
+.setting-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.amm-select-sm{background:rgba(255,255,255,.07);border:1px solid rgba(142,207,160,.2);border-radius:8px;padding:6px 10px;color:var(--cream);font-size:12px;outline:none;font-family:'DM Sans',sans-serif;appearance:none}
+.amm-select-sm option{background:#1e3a1e;color:var(--cream)}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--sage);color:#fff;padding:10px 22px;border-radius:22px;font-size:13px;z-index:9999;pointer-events:none;animation:tIn .3s ease,tOut .4s ease 1.7s forwards;white-space:nowrap;box-shadow:0 4px 20px rgba(90,158,111,.4)}
+@keyframes tIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes tOut{to{opacity:0;transform:translateX(-50%) translateY(-6px)}}
+
+/* Tips */
+.tip-list{list-style:none}
+.tip-list li{display:flex;align-items:flex-start;gap:9px;font-size:12px;color:var(--mint);line-height:1.55;padding:7px 0;border-bottom:1px solid rgba(142,207,160,.07)}
+.tip-list li:last-child{border:none}
+.tip-list li::before{content:attr(data-i);font-size:15px;flex-shrink:0}
+.season-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.sleg{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--mint)}
+.sleg-dot{width:10px;height:10px;border-radius:2px}
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+<div class="leaf-float" style="left:8%;animation-duration:14s;animation-delay:0s">🍃</div>
+<div class="leaf-float" style="left:27%;animation-duration:19s;animation-delay:5s;font-size:13px">🌿</div>
+<div class="leaf-float" style="left:63%;animation-duration:13s;animation-delay:9s;font-size:15px">🍂</div>
+<div class="leaf-float" style="left:82%;animation-duration:21s;animation-delay:2s;font-size:11px">🍃</div>
+
+<!-- ═══════════════ AUTH SCREEN ═══════════════ -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">🦅</div>
+    <div class="auth-brand">Bird<span>Lens</span></div>
+    <div class="auth-tagline">AI-powered bird identification with<br>migration, habitat &amp; seasonal intelligence</div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="showAuthTab('login')">Sign In</button>
+      <button class="auth-tab" id="tab-signup" onclick="showAuthTab('signup')">Create Account</button>
+    </div>
+
+    <!-- Login -->
+    <div class="auth-form active" id="form-login">
+      <div class="auth-err" id="login-err"></div>
+      <div class="auth-field">
+        <label class="auth-label">Email</label>
+        <input class="auth-input" id="login-email" type="email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Password</label>
+        <input class="auth-input" id="login-pass" type="password" placeholder="Your password" autocomplete="current-password">
+      </div>
+      <button class="auth-btn" onclick="doLogin()">Sign In →</button>
+      <div class="auth-note">Your data is stored locally on this device and linked to your account.</div>
+    </div>
+
+    <!-- Signup -->
+    <div class="auth-form" id="form-signup">
+      <div class="auth-err" id="signup-err"></div>
+      <div class="auth-field">
+        <label class="auth-label">Display Name</label>
+        <input class="auth-input" id="signup-name" type="text" placeholder="e.g. Alex the Birder" autocomplete="name">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Email</label>
+        <input class="auth-input" id="signup-email" type="email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Password</label>
+        <input class="auth-input" id="signup-pass" type="password" placeholder="At least 6 characters" autocomplete="new-password">
+      </div>
+      <button class="auth-btn" onclick="doSignup()">Create Account →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MAIN APP ═══════════════ -->
+<div id="app" class="hidden">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-icon">🦅</div>
+      <span class="logo-text">Bird<span>Lens</span></span>
+    </div>
+    <div class="topbar-right">
+      <div class="loc-pill" onclick="refreshLocation()">
+        <span class="loc-dot"></span>
+        <span id="loc-text">Locating…</span>
+      </div>
+      <div class="user-pill" onclick="signOut()" title="Sign out">
+        <span>👤</span>
+        <span id="user-label">—</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sidebar (desktop) -->
+  <aside class="sidebar" id="desktop-sidebar">
+    <div class="api-banner" id="sb-api-banner">
+      <strong>🔑 Google Gemini API Key</strong><br>
+      Free at <a href="https://aistudio.google.com" target="_blank" style="color:var(--gold)">aistudio.google.com</a>
+      <div class="api-row">
+        <input class="api-inp" id="sb-api-inp" type="password" placeholder="AIza…">
+        <button class="btn btn-gold btn-sm" onclick="saveKey('sb-api-inp')">Save</button>
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sidebar-title">📋 Recent Sightings</div>
+      <div id="sidebar-sightings"><div style="font-size:12px;color:var(--muted);font-style:italic">No sightings yet.</div></div>
+    </div>
+    <div class="sbar-section">
+      <div class="sidebar-title">📅 Season Key</div>
+      <div class="season-legend">
+        <div class="sleg"><div class="sleg-dot" style="background:var(--leaf)"></div>Resident</div>
+        <div class="sleg"><div class="sleg-dot" style="background:var(--gold)"></div>Breeding</div>
+        <div class="sleg"><div class="sleg-dot" style="background:var(--dusk)"></div>Migrating</div>
+        <div class="sleg"><div class="sleg-dot" style="background:var(--bark)"></div>Wintering</div>
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sidebar-title">💡 Photo Tips</div>
+      <ul class="tip-list">
+        <li data-i="☀️">Photograph in good, even light</li>
+        <li data-i="🎯">Capture the full bird including feet &amp; beak</li>
+        <li data-i="📏">Include a size reference when possible</li>
+        <li data-i="🌿">Note the habitat — woodland, coast, urban</li>
+        <li data-i="🎵">Unusual bird? Check local rarity alerts!</li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Page host -->
+  <div class="page-host" id="page-host">
+
+    <!-- ── IDENTIFY ── -->
+    <div class="page-section active" id="pg-identify">
+      <div class="page-inner">
+
+        <div class="api-banner" id="mob-api-banner" style="display:none">
+          <strong>🔑 Google Gemini API Key needed</strong><br>
+          Get a free key at <a href="https://aistudio.google.com" target="_blank" style="color:var(--gold)">aistudio.google.com</a>
+          <div class="api-row">
+            <input class="api-inp" id="mob-api-inp" type="password" placeholder="AIza…">
+            <button class="btn btn-gold btn-sm" onclick="saveKey('mob-api-inp')">Save</button>
+          </div>
+        </div>
+
+        <div class="slabel">Upload or Capture</div>
+        <div class="upload-zone" id="uz" ondragover="dOver(event)" ondragleave="dLeave(event)" ondrop="dDrop(event)">
+          <input type="file" accept="image/*" id="file-inp" onchange="loadFile(event)">
+          <span class="uz-icon">🦜</span>
+          <div class="uz-title">Drop a bird photo here</div>
+          <div class="uz-sub">Drag &amp; drop, or choose below</div>
+          <div class="uz-btns">
+            <button class="btn btn-primary" type="button" onclick="event.stopPropagation();document.getElementById('file-inp').click()">📁 Browse</button>
+            <button class="btn btn-secondary" type="button" onclick="event.stopPropagation();triggerCamera()">📷 Camera</button>
+          </div>
+          <input type="file" accept="image/*" capture="environment" id="cam-inp" style="display:none;position:static;opacity:1;width:0;height:0" onchange="loadFile(event)">
+        </div>
+
+        <div class="preview-wrap" id="prev-wrap">
+          <img id="prev-img" class="preview-img" alt="">
+          <div class="preview-ovl"></div>
+          <div class="preview-badge" id="prev-badge">Photo loaded</div>
+          <button class="preview-rm" onclick="clearImg()" type="button">✕</button>
+        </div>
+
+        <div class="ctx-grid">
+          <div class="ctx-card"><div class="ctx-lbl">📍 Location</div><div class="ctx-val dim" id="ctx-loc">Detecting…</div></div>
+          <div class="ctx-card"><div class="ctx-lbl">📅 Season</div><div class="ctx-val" id="ctx-date">—</div></div>
+          <div class="ctx-card"><div class="ctx-lbl">🌡️ Region</div><div class="ctx-val dim" id="ctx-region">—</div></div>
+          <div class="ctx-card"><div class="ctx-lbl">🌍 Hemisphere</div><div class="ctx-val dim" id="ctx-hemi">—</div></div>
+        </div>
+
+        <button class="id-btn" id="id-btn" onclick="identify()" type="button">
+          <div class="spinner"></div>
+          <span class="id-txt">🔍 Identify This Bird</span>
+        </button>
+
+        <div class="err-card" id="err-card"></div>
+
+        <!-- Result -->
+        <div class="res-card" id="res-card">
+          <div class="res-head">
+            <div class="res-emoji" id="r-emoji">🐦</div>
+            <div class="res-title">
+              <div class="res-common" id="r-common">—</div>
+              <div class="res-latin" id="r-latin">—</div>
+            </div>
+            <div class="conf-ring" id="r-ring"><div class="conf-pct" id="r-pct">—</div></div>
+          </div>
+          <div class="res-body">
+            <div class="badges" id="r-badges"></div>
+            <p class="res-desc" id="r-desc"></p>
+            <div class="season-bar">
+              <div class="sbar-lbl">Annual Presence Calendar</div>
+              <div class="month-track" id="r-cal"></div>
+              <div class="mlabels"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div>
+            </div>
+            <div class="info-grid" id="r-info"></div>
+            <div class="fun-fact" id="r-fact"></div>
+          </div>
+        </div>
+
+        <!-- Map action -->
+        <div class="map-action-panel" id="map-action-panel">
+          <div class="map-action-title">📍 Add to Map</div>
+          <div class="map-action-sub">Where would you like to pin this bird on the map?</div>
+          <div class="map-opts" id="map-opts">
+            <div class="map-opt selected" data-opt="sighting" onclick="selectMapOpt(this)">
+              <div class="map-opt-icon">📍</div>
+              <div class="map-opt-info"><div class="map-opt-title">Where I saw it</div><div class="map-opt-desc">Pin at your current location</div></div>
+              <div class="map-opt-radio"></div>
+            </div>
+            <div class="map-opt" data-opt="habitat" onclick="selectMapOpt(this)">
+              <div class="map-opt-icon">🌿</div>
+              <div class="map-opt-info"><div class="map-opt-title">Native habitat center</div><div class="map-opt-desc">Pin at species' known range</div></div>
+              <div class="map-opt-radio"></div>
+            </div>
+            <div class="map-opt" data-opt="none" onclick="selectMapOpt(this)">
+              <div class="map-opt-icon">🚫</div>
+              <div class="map-opt-info"><div class="map-opt-title">Don't add to map</div><div class="map-opt-desc">Skip map marking</div></div>
+              <div class="map-opt-radio"></div>
+            </div>
+          </div>
+          <div class="color-picker-row">
+            <span class="color-picker-label">Marker color:</span>
+            <div class="color-swatches" id="color-swatches"></div>
+          </div>
+          <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="confirmAdd()" type="button">✓ Save to Library</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── LIBRARY ── -->
+    <div class="page-section" id="pg-library">
+      <div class="page-inner">
+        <div class="lib-header">
+          <div class="lib-title">📚 My Library</div>
+          <div class="lib-count" id="lib-count">0 birds</div>
+        </div>
+        <input class="lib-search" id="lib-search" placeholder="🔍 Search name, nickname…" oninput="renderLibrary()">
+        <div class="lib-grid" id="lib-grid"></div>
+      </div>
+    </div>
+
+    <!-- ── MAP ── -->
+    <div class="map-page" id="pg-map">
+      <div id="leaflet-map"></div>
+      <div class="map-toolbar">
+        <button class="map-tool-btn" title="Add marker" onclick="openAddMarker()" type="button">➕</button>
+        <button class="map-tool-btn" title="My location" onclick="goToMyLocation()" type="button">🎯</button>
+        <button class="map-tool-btn" title="Clear all markers" onclick="askClearMarkers()" type="button">🗑️</button>
+      </div>
+      <div class="map-legend">
+        <div class="map-legend-title">My Sightings</div>
+        <div id="map-legend-items"><div style="font-size:11px;color:var(--muted);font-style:italic">No markers yet</div></div>
+      </div>
+      <div class="add-marker-sheet" id="amm">
+        <button class="amm-close" onclick="closeAddMarker()" type="button">✕</button>
+        <div class="amm-title">➕ Add Bird Marker</div>
+        <div class="amm-sub">Select a bird from your library</div>
+        <select class="amm-select" id="amm-bird-select"><option value="">— Select a bird —</option></select>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <span style="font-size:12px;color:var(--mint);font-family:'DM Mono',monospace">Color:</span>
+          <div class="color-swatches" id="amm-swatches"></div>
+        </div>
+        <div style="font-size:12px;color:var(--mint);margin-bottom:12px">After pressing the button below, click anywhere on the map to place the pin.</div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" style="flex:1" onclick="startPlacingMarker()" type="button">📍 Click Map to Place</button>
+          <button class="btn btn-secondary" onclick="closeAddMarker()" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SETTINGS ── -->
+    <div class="page-section" id="pg-settings">
+      <div class="page-inner">
+        <div class="slabel" style="margin-bottom:18px">Settings</div>
+
+        <div class="settings-section">
+          <div class="settings-title">👤 Account</div>
+          <div class="setting-row">
+            <div><div class="setting-label" id="set-username">—</div><div class="setting-sub" id="set-email">—</div></div>
+            <button class="btn btn-danger btn-sm" onclick="signOut()">Sign Out</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title">🔑 Google Gemini API</div>
+          <div class="api-banner" style="margin-bottom:0">
+            <strong>Google Gemini API Key</strong><br>
+            Free tier: 1,500 identifications/day.<br>
+            Get yours at <a href="https://aistudio.google.com" target="_blank" style="color:var(--gold)">aistudio.google.com</a>
+            <div class="api-row" style="margin-top:9px">
+              <input class="api-inp" id="set-api-inp" type="password" placeholder="AIza…">
+              <button class="btn btn-gold btn-sm" onclick="saveKey('set-api-inp')" type="button">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title">🗺️ Map Preferences</div>
+          <div class="setting-row">
+            <div><div class="setting-label">Auto-add to map</div><div class="setting-sub">Default behavior after identification</div></div>
+            <select class="amm-select-sm" id="set-auto-map" onchange="savePref()">
+              <option value="ask">Ask me each time</option>
+              <option value="sighting">Always (my location)</option>
+              <option value="none">Never</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title">📊 Library</div>
+          <div class="setting-row">
+            <div><div class="setting-label">Total birds saved</div></div>
+            <div style="font-size:13px;color:var(--mint);font-family:'DM Mono',monospace" id="set-lib-size">0</div>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">Map markers</div></div>
+            <div style="font-size:13px;color:var(--mint);font-family:'DM Mono',monospace" id="set-marker-count">0</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /page-host -->
+
+  <!-- Bottom nav (mobile) -->
+  <nav class="bottomnav">
+    <button class="nav-btn active" id="nav-identify" onclick="switchPage('identify')" type="button"><span class="nav-icon">🔍</span><span>Identify</span></button>
+    <button class="nav-btn" id="nav-library" onclick="switchPage('library')" type="button"><span class="nav-icon">📚</span><span>Library</span></button>
+    <button class="nav-btn" id="nav-map" onclick="switchPage('map')" type="button"><span class="nav-icon">🗺️</span><span>Map</span></button>
+    <button class="nav-btn" id="nav-settings" onclick="switchPage('settings')" type="button"><span class="nav-icon">⚙️</span><span>Settings</span></button>
+  </nav>
+
+</div><!-- /app -->
+
+<!-- ═══ BIRD DETAIL MODAL ═══ -->
+<div class="modal-overlay" id="bird-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="res-emoji" id="bm-emoji">🐦</div>
+      <div class="res-title" style="flex:1">
+        <div class="res-common" id="bm-common">—</div>
+        <div class="res-latin" id="bm-latin">—</div>
+      </div>
+      <button class="modal-close-btn" onclick="closeModal()" type="button">✕</button>
+    </div>
+    <div class="modal-body" id="bird-modal-body"></div>
+  </div>
+</div>
+
+<!-- ═══ CONFIRM DIALOG ═══ -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirm-icon">🗑️</div>
+    <div class="confirm-title" id="confirm-title">Are you sure?</div>
+    <div class="confirm-msg" id="confirm-msg">This action cannot be undone.</div>
+    <div class="confirm-btns">
+      <button class="btn btn-danger-solid" id="confirm-yes" type="button">Yes, Delete</button>
+      <button class="btn btn-secondary" onclick="closeConfirm()" type="button">No, Keep It</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════
+//  CONSTANTS
+// ══════════════════════════════════════════════════
+const COLORS = ['#5a9e6f','#c8972a','#6699aa','#c85050','#9b70c8','#c87050','#50a0c8','#c85090'];
+const CLABELS = ['Green','Amber','Blue','Red','Purple','Orange','Sky','Pink'];
+// Google Gemini 1.5 Flash — free tier: 1,500 requests/day
+const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_URL = key => `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+
+// ══════════════════════════════════════════════════
+//  STORAGE HELPERS
+// ══════════════════════════════════════════════════
+const lsGet = k => { try{ return localStorage.getItem(k); }catch{ return null; } };
+const lsSet = (k,v) => { try{ localStorage.setItem(k,v); }catch{} };
+const lsJson = (k, def) => { try{ const v=lsGet(k); return v?JSON.parse(v):def; }catch{ return def; } };
+
+// ══════════════════════════════════════════════════
+//  AUTH (local, per-device)
+// ══════════════════════════════════════════════════
+let currentUser = null; // {id, name, email}
+
+function getUsers(){ return lsJson('bl_users', {}); }
+function saveUsers(u){ lsSet('bl_users', JSON.stringify(u)); }
+function userKey(uid, k){ return `bl_u_${uid}_${k}`; }
+
+function showAuthTab(tab){
+  document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.auth-form').forEach(f=>f.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('form-'+tab).classList.add('active');
+}
+
+function authErr(formId, msg){
+  const el = document.getElementById(formId+'-err');
+  el.textContent = msg; el.classList.add('on');
+}
+function clearAuthErr(formId){ document.getElementById(formId+'-err').classList.remove('on'); }
+
+function doSignup(){
+  clearAuthErr('signup');
+  const name  = document.getElementById('signup-name').value.trim();
+  const email = document.getElementById('signup-email').value.trim().toLowerCase();
+  const pass  = document.getElementById('signup-pass').value;
+  if(!name){ authErr('signup','Please enter your display name.'); return; }
+  if(!email || !email.includes('@')){ authErr('signup','Please enter a valid email address.'); return; }
+  if(pass.length < 6){ authErr('signup','Password must be at least 6 characters.'); return; }
+
+  const users = getUsers();
+  const exists = Object.values(users).find(u=>u.email===email);
+  if(exists){ authErr('signup','An account with this email already exists.'); return; }
+
+  const uid = 'u_' + Date.now();
+  users[uid] = { id:uid, name, email, passHash: simpleHash(pass) };
+  saveUsers(users);
+  loginAs(users[uid]);
+}
+
+function doLogin(){
+  clearAuthErr('login');
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const pass  = document.getElementById('login-pass').value;
+  if(!email){ authErr('login','Please enter your email.'); return; }
+  if(!pass){ authErr('login','Please enter your password.'); return; }
+
+  const users = getUsers();
+  const user = Object.values(users).find(u=>u.email===email);
+  if(!user){ authErr('login','No account found with this email.'); return; }
+  if(user.passHash !== simpleHash(pass)){ authErr('login','Incorrect password.'); return; }
+  loginAs(user);
+}
+
+function simpleHash(str){
+  let h = 0x811c9dc5;
+  for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h>>>0).toString(16);
+}
+
+function loginAs(user){
+  currentUser = user;
+  lsSet('bl_session', user.id);
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  loadUserData();
+  bootApp();
+}
+
+function signOut(){
+  lsSet('bl_session','');
+  currentUser = null;
+  S.library=[]; S.markers=[]; S.apiKey='';
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('auth-screen').classList.remove('hidden');
+  // Reset form
+  ['login-email','login-pass','signup-name','signup-email','signup-pass'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  showAuthTab('login');
+}
+
+function tryAutoLogin(){
+  const uid = lsGet('bl_session');
+  if(!uid) return false;
+  const users = getUsers();
+  if(users[uid]){ loginAs(users[uid]); return true; }
+  return false;
+}
+
+// ══════════════════════════════════════════════════
+//  USER DATA
+// ══════════════════════════════════════════════════
+let S = {
+  apiKey:'', location:null, locationName:'',
+  imageB64:null, imageType:'image/jpeg',
+  currentResult:null, selectedMapOpt:'sighting',
+  selectedColor:COLORS[0],
+  library:[], markers:[],
+  prefs:{autoMap:'ask'},
+  editingId:null, placingMarker:false,
+  ammColor:COLORS[0], ammBirdId:null,
+};
+
+function loadUserData(){
+  if(!currentUser) return;
+  const uid = currentUser.id;
+  S.apiKey  = lsGet(userKey(uid,'apikey')) || lsGet('bl_key') || '';
+  S.library = lsJson(userKey(uid,'lib'), []);
+  S.markers = lsJson(userKey(uid,'markers'), []);
+  S.prefs   = lsJson(userKey(uid,'prefs'), {autoMap:'ask'});
+}
+
+function saveLib(){ if(currentUser) lsSet(userKey(currentUser.id,'lib'), JSON.stringify(S.library)); }
+function saveMarkers(){ if(currentUser) lsSet(userKey(currentUser.id,'markers'), JSON.stringify(S.markers)); }
+function saveApiKey(val){ if(currentUser) lsSet(userKey(currentUser.id,'apikey'), val); lsSet('bl_key',val); }
+function savePrefs(){ if(currentUser) lsSet(userKey(currentUser.id,'prefs'), JSON.stringify(S.prefs)); }
+
+// ══════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', ()=>{
+  if(!tryAutoLogin()){
+    document.getElementById('auth-screen').classList.remove('hidden');
+  }
+  // Enter key on auth
+  document.getElementById('login-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  document.getElementById('signup-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doSignup(); });
+});
+
+function bootApp(){
+  updateDate();
+  getLocation();
+  buildSwatches('color-swatches', c=>{ S.selectedColor=c; });
+  buildSwatches('amm-swatches', c=>{ S.ammColor=c; });
+  if(S.apiKey) setKeyUI();
+  if(!S.apiKey && window.innerWidth<960) document.getElementById('mob-api-banner').style.display='block';
+  const sel = document.getElementById('set-auto-map');
+  if(sel) sel.value = S.prefs.autoMap||'ask';
+  document.getElementById('user-label').textContent = currentUser.name.split(' ')[0];
+  document.getElementById('set-username').textContent = currentUser.name;
+  document.getElementById('set-email').textContent = currentUser.email;
+  renderLibrary();
+  renderSidebar();
+  updateSettingsCounts();
+}
+
+// ══════════════════════════════════════════════════
+//  PAGE NAV
+// ══════════════════════════════════════════════════
+let currentPage = 'identify';
+function switchPage(p){
+  currentPage = p;
+  document.querySelectorAll('.page-section,.map-page').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  if(p==='map'){
+    document.getElementById('pg-map').classList.add('active');
+    initMap();
+  } else {
+    document.getElementById('pg-'+p).classList.add('active');
+  }
+  const nb = document.getElementById('nav-'+p);
+  if(nb) nb.classList.add('active');
+  if(p==='library') renderLibrary();
+  if(p==='settings') updateSettingsCounts();
+}
+
+// ══════════════════════════════════════════════════
+//  API KEY
+// ══════════════════════════════════════════════════
+function saveKey(inputId){
+  const v = document.getElementById(inputId).value.trim();
+  if(v && !v.startsWith('•')){
+    S.apiKey = v;
+    saveApiKey(v);
+    setKeyUI();
+    toast('API key saved ✓');
+  }
+}
+function setKeyUI(){
+  ['sb-api-inp','mob-api-inp','set-api-inp'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){ el.value='•'.repeat(18); el.placeholder='Gemini key saved ✓'; }
+  });
+  document.getElementById('mob-api-banner').style.display='none';
+}
+
+// ══════════════════════════════════════════════════
+//  LOCATION
+// ══════════════════════════════════════════════════
+function getLocation(){
+  if(!navigator.geolocation){ setLocFallback(); return; }
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    S.location={lat:pos.coords.latitude, lon:pos.coords.longitude};
+    const name = await revGeo(pos.coords.latitude, pos.coords.longitude);
+    S.locationName = name;
+    document.getElementById('loc-text').textContent = name.split(',')[0];
+    document.getElementById('ctx-loc').textContent = name;
+    document.getElementById('ctx-loc').classList.remove('dim');
+    document.getElementById('ctx-hemi').textContent = (pos.coords.latitude>=0?'Northern':'Southern')+' Hemisphere';
+    document.getElementById('ctx-hemi').classList.remove('dim');
+    document.getElementById('ctx-region').textContent = regionType(pos.coords.latitude);
+    document.getElementById('ctx-region').classList.remove('dim');
+  }, ()=>setLocFallback());
+}
+function refreshLocation(){ document.getElementById('loc-text').textContent='Locating…'; getLocation(); }
+async function revGeo(lat, lon){
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+    const d=await r.json();
+    const city=d.address?.city||d.address?.town||d.address?.village||d.address?.county||'';
+    const country=d.address?.country||'';
+    return city?`${city}, ${country}`:country||`${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+  }catch{ return `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`; }
+}
+function setLocFallback(){
+  document.getElementById('loc-text').textContent='No location';
+  ['ctx-loc','ctx-hemi','ctx-region'].forEach(id=>{
+    const el=document.getElementById(id);
+    el.textContent='Unavailable'; el.classList.add('dim');
+  });
+}
+function regionType(lat){
+  const a=Math.abs(lat);
+  if(a<23.5) return 'Tropical';
+  if(a<40) return 'Subtropical';
+  if(a<60) return 'Temperate';
+  return 'Subarctic';
+}
+
+// ══════════════════════════════════════════════════
+//  DATE
+// ══════════════════════════════════════════════════
+function updateDate(){
+  const now=new Date();
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const seasons=['Winter','Winter','Spring','Spring','Spring','Summer','Summer','Summer','Autumn','Autumn','Autumn','Winter'];
+  document.getElementById('ctx-date').textContent=`${months[now.getMonth()]} · ${seasons[now.getMonth()]}`;
+}
+function currentSeason(){
+  const m=new Date().getMonth();
+  return ['Winter','Winter','Spring','Spring','Spring','Summer','Summer','Summer','Autumn','Autumn','Autumn','Winter'][m];
+}
+
+// ══════════════════════════════════════════════════
+//  FILE HANDLING
+// ══════════════════════════════════════════════════
+function loadFile(e){
+  const f=e.target.files[0]; if(!f) return;
+  S.imageType=f.type||'image/jpeg';
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    S.imageB64=ev.target.result.split(',')[1];
+    document.getElementById('prev-img').src=ev.target.result;
+    document.getElementById('prev-wrap').classList.add('on');
+    document.getElementById('uz').style.display='none';
+    document.getElementById('prev-badge').textContent=f.name||'Photo loaded';
+    hideResult();
+  };
+  reader.readAsDataURL(f);
+}
+function dOver(e){ e.preventDefault(); document.getElementById('uz').classList.add('drag'); }
+function dLeave(){ document.getElementById('uz').classList.remove('drag'); }
+function dDrop(e){
+  e.preventDefault(); document.getElementById('uz').classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type.startsWith('image/')) loadFile({target:{files:[f]}});
+}
+function triggerCamera(){ document.getElementById('cam-inp').click(); }
+function clearImg(){
+  S.imageB64=null;
+  document.getElementById('prev-wrap').classList.remove('on');
+  document.getElementById('uz').style.display='';
+  document.getElementById('file-inp').value='';
+  document.getElementById('cam-inp').value='';
+  hideResult();
+}
+
+// ══════════════════════════════════════════════════
+//  IDENTIFY  — powered by Google Gemini 1.5 Flash
+//  Free tier: 1,500 requests/day, no special headers
+// ══════════════════════════════════════════════════
+async function identify(){
+  if(!S.imageB64){ showErr('Please upload or capture a bird photo first.'); return; }
+  if(!S.apiKey){ showErr('Please add your free Google Gemini API key in Settings or the sidebar.\nGet one at: aistudio.google.com'); return; }
+
+  setLoading(true); hideResult(); clearErr();
+
+  const now=new Date();
+  const month=now.toLocaleString('default',{month:'long'});
+  const monthNum=now.getMonth()+1;
+  const season=currentSeason();
+  const hemi=S.location?(S.location.lat>=0?'Northern':'Southern'):'Unknown';
+
+  const prompt=`You are an expert ornithologist. Analyze the bird in this image using this context:
+LOCATION: ${S.locationName||'Unknown'} ${S.location?`(${S.location.lat.toFixed(4)}, ${S.location.lon.toFixed(4)})`:''}
+MONTH: ${month} ${now.getFullYear()} (month number ${monthNum})
+SEASON: ${season}, ${hemi} Hemisphere
+REGION TYPE: ${document.getElementById('ctx-region').textContent}
+
+CRITICAL INSTRUCTION: Your entire response must be ONLY a single raw JSON object. Do NOT include any markdown formatting, code fences, backticks, or any text before or after the JSON. Start your response with { and end with }.
+
+Use exactly this JSON structure:
+{
+  "identified": true,
+  "confidence": 87,
+  "commonName": "European Robin",
+  "scientificName": "Erithacus rubecula",
+  "emoji": "🐦",
+  "description": "2-3 sentences about visible identification features in this specific photo.",
+  "statusInLocation": "resident",
+  "statusBadges": ["Resident Year-Round", "Common"],
+  "currentSeasonStatus": "One sentence: what is this bird doing RIGHT NOW at this location in this month.",
+  "migrationInfo": "Specific migration details relevant to the user location and current month.",
+  "calendarPresence": [
+    {"month":1,"status":"wintering"}, {"month":2,"status":"wintering"},
+    {"month":3,"status":"resident"}, {"month":4,"status":"breeding"},
+    {"month":5,"status":"breeding"}, {"month":6,"status":"breeding"},
+    {"month":7,"status":"breeding"}, {"month":8,"status":"breeding"},
+    {"month":9,"status":"resident"}, {"month":10,"status":"resident"},
+    {"month":11,"status":"wintering"}, {"month":12,"status":"wintering"}
+  ],
+  "habitat": "Preferred habitat type",
+  "diet": "Primary food sources",
+  "wingspan": "e.g. 20-22cm",
+  "weight": "e.g. 14-21g",
+  "conservationStatus": "e.g. Least Concern (IUCN)",
+  "funFact": "One specific, interesting fact ideally related to current seasonal behaviour.",
+  "similarSpecies": "1-2 look-alike species and how to distinguish them.",
+  "habitatLat": 51.5,
+  "habitatLon": -0.1,
+  "notIdentified": false,
+  "notIdentifiedReason": ""
+}
+
+calendarPresence status values must be one of: resident, breeding, migrating, wintering, absent
+Tailor calendarPresence to the USER'S SPECIFIC LOCATION.
+habitatLat/habitatLon: geographic center of this species' native range.
+If image does NOT show a bird: set identified:false, notIdentified:true, explain in notIdentifiedReason.`;
+
+  try{
+    // ── Google Gemini API (no special CORS headers required) ──
+    const resp = await fetch(GEMINI_URL(S.apiKey), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inlineData: { mimeType: S.imageType, data: S.imageB64 } },
+            { text: prompt }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 2000,
+          responseMimeType: 'application/json'
+        }
+      })
+    });
+
+    if(!resp.ok){
+      const errData = await resp.json().catch(()=>({}));
+      const msg = errData?.error?.message || `API error ${resp.status}`;
+      // Friendly messages for common errors
+      if(resp.status===400) throw new Error('Invalid API key or request. Check your Gemini key in Settings.');
+      if(resp.status===403) throw new Error('API key not authorised. Make sure the Generative Language API is enabled in your Google Cloud project.');
+      if(resp.status===429) throw new Error('Rate limit reached. Gemini free tier allows 15 requests/minute. Please wait a moment.');
+      throw new Error(msg);
+    }
+
+    const data = await resp.json();
+
+    // Extract text from Gemini response structure
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if(!rawText) throw new Error('Empty response from Gemini. Please try again.');
+
+    // Parse JSON — strip any accidental fences Gemini might add
+    const clean = rawText.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/,'').trim();
+    let result;
+    try{
+      result = JSON.parse(clean);
+    } catch(pe){
+      // Fallback: try to extract JSON block from anywhere in the text
+      const match = rawText.match(/\{[\s\S]*\}/);
+      if(match){ try{ result=JSON.parse(match[0]); }catch{ throw new Error('Could not parse AI response. Try again.'); } }
+      else throw new Error('Gemini returned an unexpected format. Please try again.');
+    }
+
+    if(result.notIdentified || !result.identified){
+      showErr('⚠️ ' + (result.notIdentifiedReason||'No bird detected in this image. Please try a clearer photo.'));
+    } else {
+      S.currentResult = { ...result, imageB64: S.imageB64, imageType: S.imageType };
+      renderResult(result, monthNum);
+      document.getElementById('map-action-panel').classList.add('on');
+      setTimeout(()=>document.getElementById('res-card').scrollIntoView({behavior:'smooth',block:'nearest'}), 100);
+    }
+  } catch(err){
+    console.error('Identification error:', err);
+    showErr('Identification failed: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  RENDER RESULT
+// ══════════════════════════════════════════════════
+function renderResult(r, monthNum){
+  document.getElementById('r-emoji').textContent = r.emoji||'🐦';
+  document.getElementById('r-common').textContent = r.commonName;
+  document.getElementById('r-latin').textContent = r.scientificName;
+  const pct = Math.min(100, Math.max(0, r.confidence||0));
+  document.getElementById('r-ring').style.background =
+    `conic-gradient(var(--leaf) ${pct}%, rgba(255,255,255,.1) 0)`;
+  document.getElementById('r-pct').textContent = pct+'%';
+
+  const bmap={'resident':'b-res','year-round':'b-res','migrant':'b-mig','summer visitor':'b-mig',
+    'winter visitor':'b-win','breeding':'b-brd','nesting':'b-brd','wintering':'b-win',
+    'passage migrant':'b-pass','rare':'b-rare','uncommon':'b-rare','common':'b-res'};
+  document.getElementById('r-badges').innerHTML=(r.statusBadges||[]).map(b=>{
+    const cls=Object.entries(bmap).find(([k])=>b.toLowerCase().includes(k))?.[1]||'b-res';
+    return `<span class="badge ${cls}">${b}</span>`;
+  }).join('');
+
+  document.getElementById('r-desc').textContent=
+    [r.description,r.currentSeasonStatus,r.migrationInfo].filter(Boolean).join(' ');
+
+  const track=document.getElementById('r-cal'); track.innerHTML='';
+  (r.calendarPresence||[]).forEach(m=>{
+    const c=document.createElement('div');
+    c.className='mc'+(m.status!=='absent'?' '+m.status:'')+(m.month===monthNum?' current':'');
+    c.title=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m.month-1]+': '+m.status;
+    track.appendChild(c);
+  });
+
+  const fields=[{l:'Habitat',v:r.habitat},{l:'Diet',v:r.diet},{l:'Wingspan',v:r.wingspan},
+    {l:'Weight',v:r.weight},{l:'Conservation',v:r.conservationStatus},{l:'Similar To',v:r.similarSpecies}];
+  document.getElementById('r-info').innerHTML=fields.filter(f=>f.v)
+    .map(f=>`<div class="ii"><div class="ii-lbl">${f.l}</div><div class="ii-val">${f.v}</div></div>`).join('');
+
+  document.getElementById('r-fact').innerHTML=`<strong>Did you know?</strong> ${r.funFact||''}`;
+  document.getElementById('res-card').classList.add('on');
+}
+
+// ══════════════════════════════════════════════════
+//  COLOR SWATCHES
+// ══════════════════════════════════════════════════
+function buildSwatches(containerId, onPick){
+  const c=document.getElementById(containerId); if(!c) return;
+  c.innerHTML='';
+  COLORS.forEach((col,i)=>{
+    const s=document.createElement('div');
+    s.className='swatch'+(i===0?' sel':'');
+    s.style.background=col; s.title=CLABELS[i];
+    s.onclick=()=>{ c.querySelectorAll('.swatch').forEach(x=>x.classList.remove('sel')); s.classList.add('sel'); onPick(col); };
+    c.appendChild(s);
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  MAP OPT
+// ══════════════════════════════════════════════════
+function selectMapOpt(el){
+  document.querySelectorAll('#map-opts .map-opt').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+  S.selectedMapOpt=el.dataset.opt;
+}
+
+// ══════════════════════════════════════════════════
+//  CONFIRM & SAVE
+// ══════════════════════════════════════════════════
+function confirmAdd(){
+  if(!S.currentResult) return;
+  const r=S.currentResult;
+  const id=Date.now().toString();
+  const bird={
+    id, emoji:r.emoji||'🐦', commonName:r.commonName, scientificName:r.scientificName,
+    nickname:'', confidence:r.confidence||0,
+    description:r.description, currentSeasonStatus:r.currentSeasonStatus,
+    migrationInfo:r.migrationInfo, statusBadges:r.statusBadges||[],
+    calendarPresence:r.calendarPresence||[], habitat:r.habitat,
+    diet:r.diet, wingspan:r.wingspan, weight:r.weight,
+    conservationStatus:r.conservationStatus, funFact:r.funFact,
+    similarSpecies:r.similarSpecies, imageB64:r.imageB64, imageType:r.imageType,
+    locationName:S.locationName, lat:S.location?.lat, lon:S.location?.lon,
+    habitatLat:r.habitatLat, habitatLon:r.habitatLon,
+    date:new Date().toLocaleDateString(), savedAt:Date.now(),
+    markerColor:S.selectedColor, notes:''
+  };
+
+  if(S.selectedMapOpt!=='none'){
+    const pinLat=S.selectedMapOpt==='habitat'?(r.habitatLat||S.location?.lat):S.location?.lat;
+    const pinLon=S.selectedMapOpt==='habitat'?(r.habitatLon||S.location?.lon):S.location?.lon;
+    if(pinLat&&pinLon){
+      S.markers.push({id:id+'_m', birdId:id, lat:pinLat, lon:pinLon, color:S.selectedColor, type:S.selectedMapOpt});
+      saveMarkers();
+    }
+  }
+
+  S.library.unshift(bird);
+  saveLib();
+  document.getElementById('map-action-panel').classList.remove('on');
+  renderLibrary(); renderSidebar(); updateMapMarkers(); updateSettingsCounts();
+  toast(`✅ ${r.commonName} saved to library!`);
+  S.currentResult=null;
+}
+
+// ══════════════════════════════════════════════════
+//  LIBRARY
+// ══════════════════════════════════════════════════
+function renderLibrary(){
+  const q=(document.getElementById('lib-search')?.value||'').toLowerCase();
+  const filtered=S.library.filter(b=>
+    b.commonName.toLowerCase().includes(q)||
+    b.scientificName.toLowerCase().includes(q)||
+    (b.nickname||'').toLowerCase().includes(q)
+  );
+  document.getElementById('lib-count').textContent=S.library.length+' bird'+(S.library.length!==1?'s':'');
+  const grid=document.getElementById('lib-grid');
+  if(!filtered.length){
+    grid.innerHTML=S.library.length===0
+      ?`<div class="lib-empty"><span class="lib-empty-icon">🦢</span><div class="lib-empty-title">Your library is empty</div><div style="font-size:13px;margin-top:4px;color:var(--muted)">Identify a bird to add it here</div></div>`
+      :`<div class="lib-empty"><span class="lib-empty-icon">🔍</span><div class="lib-empty-title">No matches found</div></div>`;
+    return;
+  }
+  grid.innerHTML=filtered.map(b=>`
+    <div class="lib-card" onclick="openBirdModal('${b.id}')">
+      ${b.imageB64
+        ?`<img class="lib-card-img" src="data:${b.imageType||'image/jpeg'};base64,${b.imageB64}" alt="${esc(b.commonName)}" loading="lazy">`
+        :`<div class="lib-card-ph">${b.emoji}</div>`}
+      <div class="lib-card-body">
+        ${b.nickname?`<div class="lib-card-nick">✨ "${esc(b.nickname)}"</div>`:''}
+        <div class="lib-card-name">${b.emoji} ${esc(b.commonName)}</div>
+        <div class="lib-card-latin">${esc(b.scientificName)}</div>
+        <div class="lib-card-meta">
+          <div class="lib-card-date">${b.date}</div>
+          <div class="lib-card-conf">${b.confidence}%</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderSidebar(){
+  const list=document.getElementById('sidebar-sightings');
+  if(!list) return;
+  if(!S.library.length){
+    list.innerHTML='<div style="font-size:12px;color:var(--muted);font-style:italic">No sightings yet.</div>';
+    return;
+  }
+  list.innerHTML=S.library.slice(0,6).map(b=>`
+    <div class="sighting-item" onclick="openBirdModal('${b.id}')">
+      <div class="si-emoji">${b.emoji}</div>
+      <div class="si-info">
+        <div class="si-name">${esc(b.commonName)}</div>
+        <div class="si-meta">${b.date}${b.locationName?' · '+b.locationName.split(',')[0]:''}</div>
+      </div>
+      <div class="si-conf">${b.confidence}%</div>
+    </div>
+  `).join('');
+}
+
+// ══════════════════════════════════════════════════
+//  BIRD DETAIL MODAL
+// ══════════════════════════════════════════════════
+function openBirdModal(id){
+  const b=S.library.find(x=>x.id===id); if(!b) return;
+  S.editingId=id;
+  document.getElementById('bm-emoji').textContent=b.emoji;
+  document.getElementById('bm-common').textContent=b.commonName;
+  document.getElementById('bm-latin').textContent=b.scientificName;
+
+  const monthNum=new Date().getMonth()+1;
+  const calHtml=b.calendarPresence?.length?`
+    <div class="season-bar" style="margin-bottom:14px">
+      <div class="sbar-lbl">Annual Presence</div>
+      <div class="month-track">${b.calendarPresence.map(m=>`
+        <div class="mc ${m.status!=='absent'?m.status:''} ${m.month===monthNum?'current':''}"
+             title="${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m.month-1]}: ${m.status}"></div>
+      `).join('')}</div>
+      <div class="mlabels"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div>
+    </div>`:'';
+
+  const infoItems=[
+    {l:'Habitat',v:b.habitat},{l:'Diet',v:b.diet},{l:'Wingspan',v:b.wingspan},
+    {l:'Weight',v:b.weight},{l:'Conservation',v:b.conservationStatus},{l:'Similar To',v:b.similarSpecies},
+    {l:'Location Seen',v:b.locationName},{l:'Date Saved',v:b.date}
+  ];
+  const infoHtml=infoItems.filter(f=>f.v)
+    .map(f=>`<div class="ii"><div class="ii-lbl">${f.l}</div><div class="ii-val">${esc(f.v)}</div></div>`).join('');
+
+  document.getElementById('bird-modal-body').innerHTML=`
+    ${b.imageB64
+      ?`<img class="modal-img" src="data:${b.imageType||'image/jpeg'};base64,${b.imageB64}" alt="${esc(b.commonName)}">`
+      :`<div class="modal-ph">${b.emoji}</div>`}
+    ${b.nickname?`<div style="background:rgba(200,151,42,.1);border:1px solid rgba(200,151,42,.25);border-radius:10px;padding:8px 14px;margin-bottom:14px;font-size:13px;color:var(--amber);font-style:italic">✨ Nickname: "${esc(b.nickname)}"</div>`:''}
+    <div class="badges" style="margin-bottom:12px">${(b.statusBadges||[]).map(x=>`<span class="badge b-res">${esc(x)}</span>`).join('')}</div>
+    <p style="font-size:13px;line-height:1.75;color:#333;margin-bottom:12px">${esc([b.description,b.currentSeasonStatus,b.migrationInfo].filter(Boolean).join(' '))}</p>
+    ${calHtml}
+    <div class="info-grid" style="margin-bottom:14px">${infoHtml}</div>
+    ${b.funFact?`<div class="fun-fact" style="margin-bottom:16px"><strong>Did you know?</strong> ${esc(b.funFact)}</div>`:''}
+    ${b.notes?`<div style="background:rgba(90,158,111,.07);border-left:3px solid var(--sage);border-radius:0 9px 9px 0;padding:11px 13px;font-size:13px;color:#333;margin-bottom:16px;line-height:1.6"><strong>Notes:</strong> ${esc(b.notes)}</div>`:''}
+
+    <hr class="section-divider">
+    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px">✏️ Edit Information</div>
+
+    <div class="edit-field"><label class="edit-label">Common Name</label>
+      <input class="edit-input" id="ed-name" value="${esc(b.commonName)}"></div>
+    <div class="edit-field"><label class="edit-label">Scientific Name</label>
+      <input class="edit-input" id="ed-latin" value="${esc(b.scientificName)}"></div>
+    <div class="edit-field"><label class="edit-label">✨ Nickname (your personal label)</label>
+      <input class="edit-input" id="ed-nick" value="${esc(b.nickname||'')}" placeholder="e.g. Robbie, Garden Visitor…"></div>
+    <div class="edit-field"><label class="edit-label">Habitat</label>
+      <input class="edit-input" id="ed-habitat" value="${esc(b.habitat||'')}"></div>
+    <div class="edit-field"><label class="edit-label">Diet</label>
+      <input class="edit-input" id="ed-diet" value="${esc(b.diet||'')}"></div>
+    <div class="edit-field"><label class="edit-label">Conservation Status</label>
+      <input class="edit-input" id="ed-conservation" value="${esc(b.conservationStatus||'')}"></div>
+    <div class="edit-field"><label class="edit-label">Fun Fact</label>
+      <textarea class="edit-input" id="ed-funfact">${esc(b.funFact||'')}</textarea></div>
+    <div class="edit-field"><label class="edit-label">Personal Notes</label>
+      <textarea class="edit-input" id="ed-notes" placeholder="Your own observations, memories…">${esc(b.notes||'')}</textarea></div>
+    <div class="edit-field"><label class="edit-label">Marker Color</label>
+      <div class="color-swatches" id="modal-swatches"></div></div>
+    <div class="edit-actions">
+      <button class="btn btn-primary" onclick="saveBirdEdits('${id}')" type="button">💾 Save Changes</button>
+      <button class="btn btn-danger" onclick="askDeleteBird('${id}')" type="button">🗑️ Delete Bird</button>
+      <button class="btn btn-secondary" onclick="closeModal()" type="button">Cancel</button>
+    </div>
+  `;
+
+  // Build color swatches in modal
+  const ms=document.getElementById('modal-swatches');
+  COLORS.forEach((col,i)=>{
+    const s=document.createElement('div');
+    s.className='swatch'+(col===b.markerColor?' sel':'');
+    s.style.background=col; s.title=CLABELS[i];
+    s.onclick=()=>{ ms.querySelectorAll('.swatch').forEach(x=>x.classList.remove('sel')); s.classList.add('sel'); };
+    ms.appendChild(s);
+  });
+
+  document.getElementById('bird-modal').classList.add('open');
+}
+
+function closeModal(){
+  document.getElementById('bird-modal').classList.remove('open');
+  S.editingId=null;
+}
+
+function saveBirdEdits(id){
+  const idx=S.library.findIndex(b=>b.id===id); if(idx===-1) return;
+  const selSwatch=document.querySelector('#modal-swatches .swatch.sel');
+  const newColor=selSwatch?selSwatch.style.background:S.library[idx].markerColor;
+  S.library[idx]={
+    ...S.library[idx],
+    commonName:document.getElementById('ed-name').value.trim()||S.library[idx].commonName,
+    scientificName:document.getElementById('ed-latin').value.trim()||S.library[idx].scientificName,
+    nickname:document.getElementById('ed-nick').value.trim(),
+    habitat:document.getElementById('ed-habitat').value.trim(),
+    diet:document.getElementById('ed-diet').value.trim(),
+    conservationStatus:document.getElementById('ed-conservation').value.trim(),
+    funFact:document.getElementById('ed-funfact').value.trim(),
+    notes:document.getElementById('ed-notes').value.trim(),
+    markerColor:newColor,
+  };
+  S.markers.forEach(m=>{ if(m.birdId===id) m.color=newColor; });
+  saveLib(); saveMarkers();
+  closeModal(); renderLibrary(); renderSidebar(); updateMapMarkers();
+  toast('Changes saved ✓');
+}
+
+// ══════════════════════════════════════════════════
+//  CONFIRM DIALOG (replaces browser confirm())
+// ══════════════════════════════════════════════════
+let confirmCallback = null;
+
+function showConfirm({icon='🗑️', title='Are you sure?', msg='This cannot be undone.', yesLabel='Yes, Delete', onYes}){
+  document.getElementById('confirm-icon').textContent=icon;
+  document.getElementById('confirm-title').textContent=title;
+  document.getElementById('confirm-msg').textContent=msg;
+  document.getElementById('confirm-yes').textContent=yesLabel;
+  confirmCallback=onYes;
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+function closeConfirm(){
+  document.getElementById('confirm-overlay').classList.remove('open');
+  confirmCallback=null;
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('confirm-yes').addEventListener('click',()=>{
+    closeConfirm();
+    if(confirmCallback) confirmCallback();
+  });
+  document.getElementById('confirm-overlay').addEventListener('click',e=>{
+    if(e.target===document.getElementById('confirm-overlay')) closeConfirm();
+  });
+  document.getElementById('bird-modal').addEventListener('click',e=>{
+    if(e.target===document.getElementById('bird-modal')) closeModal();
+  });
+});
+
+function askDeleteBird(id){
+  const b=S.library.find(x=>x.id===id);
+  showConfirm({
+    icon:'🗑️',
+    title:'Delete this bird?',
+    msg:`"${b?.commonName||'This bird'}" will be removed from your library and any map markers will also be deleted.`,
+    yesLabel:'Yes, Delete',
+    onYes:()=>deleteBird(id)
+  });
+}
+
+function deleteBird(id){
+  S.library=S.library.filter(b=>b.id!==id);
+  S.markers=S.markers.filter(m=>m.birdId!==id);
+  saveLib(); saveMarkers();
+  closeModal(); renderLibrary(); renderSidebar(); updateMapMarkers(); updateSettingsCounts();
+  toast('Bird removed from library');
+}
+
+function askClearMarkers(){
+  showConfirm({
+    icon:'🗺️',
+    title:'Clear all map markers?',
+    msg:'All pins will be removed from the map. Your library birds will be kept.',
+    yesLabel:'Yes, Clear All',
+    onYes:()=>{
+      S.markers=[]; saveMarkers(); updateMapMarkers();
+      toast('All markers cleared');
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  MAP  ← FIXED: maxBounds + noWrap
+// ══════════════════════════════════════════════════
+let map=null, leafletMarkers={}, mapInited=false;
+
+function initMap(){
+  if(mapInited) return;
+  mapInited=true;
+
+  const worldBounds = L.latLngBounds(L.latLng(-85,-180), L.latLng(85,180));
+
+  map=L.map('leaflet-map',{
+    center:[30,10], zoom:2,
+    maxBounds: worldBounds,
+    maxBoundsViscosity: 1.0,
+    minZoom: 2,
+    maxZoom: 18,
+    worldCopyJump: false,
+    zoomControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+    maxZoom:18,
+    noWrap: true,
+    bounds: worldBounds,
+  }).addTo(map);
+
+  map.on('click', e=>{
+    if(S.placingMarker) placeMarkerAt(e.latlng.lat, e.latlng.lng);
+  });
+
+  updateMapMarkers();
+}
+
+function mkIcon(color){
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:24px;height:24px;background:${color};border:3px solid #fff;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,.4);cursor:pointer;transition:transform .18s" onmouseenter="this.style.transform='scale(1.3)'" onmouseleave="this.style.transform='scale(1)'"></div>`,
+    iconSize:[24,24], iconAnchor:[12,12], popupAnchor:[0,-13]
+  });
+}
+
+function updateMapMarkers(){
+  if(!mapInited) return;
+  Object.values(leafletMarkers).forEach(m=>m.remove());
+  leafletMarkers={};
+
+  S.markers.forEach(m=>{
+    const bird=S.library.find(b=>b.id===m.birdId);
+    const name=bird?(bird.nickname?`"${bird.nickname}" (${bird.commonName})`:bird.commonName):'Unknown Bird';
+    const emoji=bird?.emoji||'🐦';
+
+    const marker=L.marker([m.lat,m.lon],{icon:mkIcon(m.color)})
+      .bindPopup(`<div class="bird-popup">
+        <span style="font-size:26px;float:right;margin-left:8px">${emoji}</span>
+        <div class="bp-name">${bird?.commonName||'Unknown'}</div>
+        ${bird?.nickname?`<div class="bp-nick">✨ "${bird.nickname}"</div>`:''}
+        <div class="bp-meta">${m.type==='habitat'?'🌿 Native habitat':'📍 Seen here'}${bird?.date?' · '+bird.date:''}</div>
+        ${bird?.locationName?`<div class="bp-meta">📍 ${bird.locationName}</div>`:''}
+        <button class="bp-btn" onclick="openBirdModal('${m.birdId}')">View Details</button>
+      </div>`,{maxWidth:220})
+      .addTo(map);
+
+    leafletMarkers[m.id]=marker;
+  });
+
+  renderMapLegend();
+}
+
+function renderMapLegend(){
+  const el=document.getElementById('map-legend-items'); if(!el) return;
+  if(!S.markers.length){
+    el.innerHTML='<div style="font-size:11px;color:var(--muted);font-style:italic">No markers yet</div>';
+    return;
+  }
+  const unique=[];
+  S.markers.forEach(m=>{
+    const bird=S.library.find(b=>b.id===m.birdId);
+    if(bird&&!unique.find(u=>u.birdId===m.birdId))
+      unique.push({birdId:m.birdId, color:m.color, name:bird.nickname||bird.commonName, emoji:bird.emoji});
+  });
+  el.innerHTML=unique.slice(0,10).map(u=>`
+    <div class="map-legend-item" onclick="openBirdModal('${u.birdId}')">
+      <div class="map-legend-dot" style="background:${u.color}"></div>
+      <span>${u.emoji} ${esc(u.name)}</span>
+    </div>
+  `).join('');
+}
+
+function goToMyLocation(){
+  if(S.location&&map) map.setView([S.location.lat,S.location.lon],10);
+  else toast('Location not available');
+}
+
+function openAddMarker(){
+  const sel=document.getElementById('amm-bird-select');
+  sel.innerHTML='<option value="">— Select a bird —</option>';
+  S.library.forEach(b=>{
+    const opt=document.createElement('option');
+    opt.value=b.id;
+    opt.textContent=`${b.emoji} ${b.nickname||b.commonName}`;
+    sel.appendChild(opt);
+  });
+  document.getElementById('amm').classList.add('open');
+}
+function closeAddMarker(){
+  document.getElementById('amm').classList.remove('open');
+  S.placingMarker=false; S.ammBirdId=null;
+  if(map) map.getContainer().style.cursor='';
+}
+function startPlacingMarker(){
+  const birdId=document.getElementById('amm-bird-select').value;
+  if(!birdId){ toast('Please select a bird first'); return; }
+  S.ammBirdId=birdId; S.placingMarker=true;
+  closeAddMarker();
+  if(map) map.getContainer().style.cursor='crosshair';
+  toast('Click anywhere on the map to place pin');
+}
+function placeMarkerAt(lat,lon){
+  S.placingMarker=false;
+  if(map) map.getContainer().style.cursor='';
+  S.markers.push({id:Date.now()+'_m', birdId:S.ammBirdId, lat, lon, color:S.ammColor, type:'manual'});
+  saveMarkers(); updateMapMarkers();
+  const bird=S.library.find(b=>b.id===S.ammBirdId);
+  toast(`📍 ${bird?.commonName||'Bird'} pinned!`);
+  S.ammBirdId=null;
+}
+
+// ══════════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════════
+function savePref(){
+  S.prefs.autoMap=document.getElementById('set-auto-map').value;
+  savePrefs(); toast('Preference saved');
+}
+function updateSettingsCounts(){
+  const sl=document.getElementById('set-lib-size');
+  const sm=document.getElementById('set-marker-count');
+  if(sl) sl.textContent=S.library.length;
+  if(sm) sm.textContent=S.markers.length;
+}
+
+// ══════════════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════════════
+function setLoading(on){
+  const b=document.getElementById('id-btn');
+  b.classList.toggle('loading',on); b.disabled=on;
+}
+function showErr(m){ const e=document.getElementById('err-card'); e.textContent=m; e.classList.add('on'); }
+function clearErr(){ document.getElementById('err-card').classList.remove('on'); }
+function hideResult(){
+  document.getElementById('res-card').classList.remove('on');
+  document.getElementById('map-action-panel').classList.remove('on');
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toast(msg){
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 2500);
+}
+</script>
+</body>
+</html>
