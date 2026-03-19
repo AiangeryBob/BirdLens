@@ -20,7 +20,7 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:16px;scroll-behavior:smooth}
-body{font-family:'DM Sans',sans-serif;background:var(--forest);color:var(--text);height:100vh;overflow:hidden}
+body{font-family:'DM Sans',sans-serif;background:var(--forest);color:var(--text);height:100vh;height:100svh;overflow:hidden;-webkit-tap-highlight-color:transparent}
 
 /* ── Background ── */
 .bg{position:fixed;inset:0;z-index:0;
@@ -61,7 +61,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--forest);color:var(--text)
 /* ════════════════════════════════════════
    MAIN APP
 ════════════════════════════════════════ */
-#app{position:relative;z-index:2;display:flex;flex-direction:column;height:100vh}
+#app{position:relative;z-index:2;display:flex;flex-direction:column;height:100vh;height:100svh}
 #app.hidden{display:none}
 
 /* Desktop layout */
@@ -88,7 +88,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--forest);color:var(--text)
 .user-pill:hover{background:rgba(200,151,42,.17)}
 
 /* ── Pages ── */
-.page-host{flex:1;overflow-y:auto;padding-bottom:calc(var(--nav-h)+8px)}
+.page-host{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding-bottom:calc(var(--nav-h)+8px)}
 @media(min-width:960px){.page-host{padding-bottom:20px}}
 .page-section{display:none}
 .page-section.active,.map-page.active{display:block}
@@ -103,7 +103,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--forest);color:var(--text)
 .nav-icon{font-size:22px;line-height:1}
 
 /* ── Sidebar ── */
-.sidebar{padding:18px 16px;background:rgba(10,26,10,.5);overflow-y:auto}
+.sidebar{padding:18px 16px;background:rgba(10,26,10,.5);overflow-y:auto;-webkit-overflow-scrolling:touch}
 .sidebar-title{font-family:'Playfair Display',serif;font-size:16px;color:var(--cream);margin-bottom:12px;font-weight:700}
 .sbar-section{margin-bottom:22px}
 .sighting-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid rgba(142,207,160,.09);margin-bottom:7px;cursor:pointer;transition:var(--t)}
@@ -306,7 +306,7 @@ textarea.edit-input{resize:vertical;min-height:80px;line-height:1.55}
 .map-page.active{display:block}
 /* Mobile: fill viewport minus topbar and bottom nav */
 @media(max-width:959px){
-  .map-page.active{height:calc(100vh - 56px - var(--nav-h))}
+  .map-page.active{height:calc(100vh - 56px - var(--nav-h));height:calc(100svh - 56px - var(--nav-h))}
 }
 /* Desktop: fill the right column */
 @media(min-width:960px){
@@ -401,6 +401,220 @@ textarea.edit-input{resize:vertical;min-height:80px;line-height:1.55}
 .season-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .sleg{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--mint)}
 .sleg-dot{width:10px;height:10px;border-radius:2px}
+
+
+/* ════════════════════════════════════════
+   MOBILE-FIRST COMPREHENSIVE FIX
+   All fixes for screens < 960px
+════════════════════════════════════════ */
+
+/* ── Prevent iOS bounce / overflow issues ── */
+html, body { overscroll-behavior: none; -webkit-overflow-scrolling: touch; }
+
+/* ── Auth screen ── */
+@media(max-width:480px){
+  .auth-box { padding: 28px 20px; border-radius: 20px; }
+  .auth-brand { font-size: 26px; }
+  .auth-logo { font-size: 42px; }
+  .auth-tagline { font-size: 12px; margin-bottom: 24px; }
+  .auth-btn { font-size: 15px; padding: 13px; }
+}
+
+/* ── Topbar: prevent overflow on small screens ── */
+@media(max-width:959px){
+  .topbar { padding: 10px 14px; gap: 6px; }
+  .logo-text { font-size: 17px; }
+  .logo-icon { width: 28px; height: 28px; font-size: 15px; }
+  /* Location pill: show only the dot on very small screens */
+  .loc-pill { max-width: 100px; padding: 5px 8px; font-size: 10px; }
+  #loc-text { max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-pill { padding: 5px 8px; font-size: 10px; gap: 4px; }
+  #user-label { max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media(max-width:380px){
+  #loc-text { display: none; }
+  .loc-pill { padding: 6px 8px; }
+}
+
+/* ── Page inner padding ── */
+@media(max-width:480px){
+  .page-inner { padding: 14px 14px 10px; }
+}
+
+/* ── Upload zone ── */
+@media(max-width:480px){
+  .upload-zone { padding: 24px 16px; min-height: 180px; }
+  .uz-icon { font-size: 40px; }
+  .uz-title { font-size: 16px; }
+  .uz-btns { gap: 8px; }
+  .uz-btns .btn { flex: 1; justify-content: center; font-size: 13px; padding: 10px 12px; }
+}
+
+/* ── Context cards ── */
+@media(max-width:400px){
+  .ctx-grid { grid-template-columns: 1fr 1fr; gap: 7px; }
+  .ctx-card { padding: 9px 10px; }
+  .ctx-val { font-size: 12px; }
+}
+
+/* ── Identify button ── */
+@media(max-width:480px){
+  .id-btn { font-size: 16px; padding: 15px; border-radius: 14px; }
+}
+
+/* ── Result card ── */
+@media(max-width:480px){
+  .res-head { padding: 16px 16px; gap: 10px; flex-wrap: wrap; }
+  .res-emoji { font-size: 38px; }
+  .res-common { font-size: 19px; }
+  .res-latin { font-size: 11px; }
+  .conf-ring { width: 44px; height: 44px; }
+  .conf-ring::before { width: 32px; height: 32px; }
+  .conf-pct { font-size: 9px; }
+  .res-body { padding: 14px 14px; }
+  .info-grid { grid-template-columns: 1fr 1fr; gap: 7px; }
+  .ii { padding: 8px 9px; }
+  .ii-val { font-size: 11px; }
+  .fun-fact { font-size: 12px; padding: 9px 11px; }
+  .res-desc { font-size: 12px; }
+}
+
+/* ── Map action panel ── */
+@media(max-width:480px){
+  .map-action-panel { padding: 14px 14px; }
+  .map-action-title { font-size: 14px; }
+  .map-opt { padding: 10px 11px; gap: 9px; }
+  .map-opt-title { font-size: 12px; }
+}
+
+/* ── Library grid: 2 columns always on mobile ── */
+@media(max-width:600px){
+  .lib-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .lib-card-img, .lib-card-ph { height: 110px; }
+  .lib-card-body { padding: 9px 10px; }
+  .lib-card-name { font-size: 13px; }
+  .lib-title { font-size: 20px; }
+}
+@media(max-width:340px){
+  .lib-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Modal: full-screen on mobile ── */
+@media(max-width:600px){
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal {
+    border-radius: 22px 22px 0 0;
+    max-width: 100%;
+    margin: 0;
+    max-height: 92vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal-head { padding: 16px 18px; }
+  .modal-body { padding: 16px 18px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .modal-img { max-height: 200px; }
+  .edit-actions { flex-direction: column; }
+  .edit-actions .btn { width: 100%; justify-content: center; }
+}
+
+/* ── Confirm dialog ── */
+@media(max-width:480px){
+  .confirm-box { padding: 24px 18px; border-radius: 18px; }
+  .confirm-title { font-size: 18px; }
+  .confirm-btns { flex-direction: column; }
+  .confirm-btns .btn { width: 100%; justify-content: center; }
+}
+
+/* ── Map: safe-area bottom ── */
+@media(max-width:959px){
+  .add-marker-sheet {
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  }
+  .map-settings-sheet {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+  /* Make toolbar buttons bigger touch targets */
+  .map-tool-btn { width: 44px; height: 44px; font-size: 20px; }
+  .map-toolbar { top: 10px; right: 10px; gap: 6px; }
+}
+
+/* ── Bottom nav: safe area inset + taller ── */
+@media(max-width:959px){
+  .bottomnav {
+    height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .page-host { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 8px); }
+  .nav-btn { padding: 6px 12px; min-width: 56px; }
+  .nav-icon { font-size: 24px; }
+  /* Nav text only on wider mobile */
+  @media(max-width:360px){ .nav-btn span:last-child { display: none; } }
+}
+
+/* ── Toast: account for nav height ── */
+@media(max-width:959px){
+  .toast { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 10px); font-size: 12px; padding: 9px 18px; white-space: normal; max-width: 90vw; text-align: center; }
+}
+
+/* ── Settings profile section: stack on small screens ── */
+@media(max-width:400px){
+  .settings-section [style*="display:flex"][style*="gap:16px"] {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+}
+
+/* ── Add marker sheet: placement options ── */
+@media(max-width:480px){
+  .add-marker-sheet { padding: 18px 16px; }
+  .add-marker-sheet .map-opt { padding: 9px 10px; }
+  .amm-title { font-size: 16px; }
+}
+
+/* ── Map recent sightings panel: smaller on mobile ── */
+@media(max-width:480px){
+  .recent-sightings-panel { width: 180px; }
+}
+
+/* ── Buttons: minimum 44px touch target ── */
+@media(max-width:959px){
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 36px; }
+  .preview-rm { width: 34px; height: 34px; font-size: 16px; }
+  /* Avatar picker */
+  .avatar-opt-btn { padding: 14px 16px; font-size: 15px; min-height: 52px; }
+  .avatar-picker-inner { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+  .avatar-picker-sheet.open { align-items: flex-end; }
+}
+
+/* ── Sighting items in sidebar ── */
+@media(max-width:959px){
+  .sighting-item { padding: 8px 2px; }
+  .si-name { font-size: 12px; }
+  .si-meta { font-size: 10px; }
+}
+
+/* ── Swatches: bigger tap targets on mobile ── */
+@media(max-width:959px){
+  .swatch { width: 30px; height: 30px; }
+  .color-swatches { gap: 9px; }
+}
+
+/* ── Map page height fix: account for real browser chrome ── */
+@media(max-width:959px){
+  .map-page.active {
+    height: calc(100svh - 56px - var(--nav-h));
+  }
+}
+
+/* ── Prevent horizontal scroll everywhere ── */
+.page-inner, .page-section, .page-host { max-width: 100%; overflow-x: hidden; }
+
+/* ── iNat link button in result ── */
+@media(max-width:480px){
+  .inat-link { font-size: 11px; padding: 7px 12px; }
+}
 
 </style>
 </head>
@@ -1742,7 +1956,7 @@ function renderResult(r, monthNum){
   const factEl = document.getElementById('r-fact');
   factEl.innerHTML = `<strong>Did you know?</strong> ${r.funFact||''}`;
   if(r.iNatUrl){
-    factEl.innerHTML += ` <a href="${r.iNatUrl}" target="_blank" style="color:var(--sage);font-style:normal;font-size:12px;white-space:nowrap">→ View on iNaturalist</a>`;
+    factEl.innerHTML += ` <a href="${r.iNatUrl}" target="_blank" class="inat-link" style="color:var(--sage);font-style:normal;font-size:12px;white-space:nowrap">→ View on iNaturalist</a>`;
   }
   document.getElementById('res-card').classList.add('on');
 }
